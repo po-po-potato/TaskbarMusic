@@ -1,9 +1,11 @@
 # TaskbarMusic
 
+**English | [简体中文](README.zh-CN.md)**
+
 A lightweight music controller and live lyrics display embedded directly into the Windows taskbar.
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%201809%2B-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2B-lightgrey)
 ![.NET](https://img.shields.io/badge/.NET-9-purple)
 
 ## What it does
@@ -33,8 +35,10 @@ Designed to be the lightest in its category: single process, ~170 MB working set
 
 ## Requirements
 
-- Windows 10 1809+ or Windows 11
-- .NET 9 runtime (or build self-contained)
+- Windows 10 1809+ or Windows 11 (x64)
+- .NET 9 runtime — or just grab the self-contained build from [Releases](https://github.com/po-po-potato/TaskbarMusic/releases) (no runtime install needed)
+
+> **Windows 10 note**: core features (taskbar embedding, media follow, lyrics) work on Win10, but the Mica / Acrylic settings-window materials require **Windows 11 22H2+** and silently fall back to solid color on Win10. The project is developed and tested mainly on Windows 11; Win10 compatibility is expected but not fully validated.
 
 ## Build
 
