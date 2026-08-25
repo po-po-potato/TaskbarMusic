@@ -1,0 +1,17 @@
+# Build outputs (Directory.Build.props redirects to %LOCALAPPDATA%\TaskbarMusic,
+# these are historical/local leftovers)
+bin/
+obj/
+obj_mvvm/
+
+# WPF temp projects
+*_wpftmp.csproj
+
+# Internal docs & AI workspace (not for public repo)
+PRD.md
+.workbuddy/
+
+# VS
+.vs/
+*.user
+*.suo

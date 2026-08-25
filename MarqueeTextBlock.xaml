@@ -1,0 +1,27 @@
+<UserControl x:Class="TaskbarMusic.MarqueeTextBlock"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="Root"
+             SnapsToDevicePixels="True"
+             UseLayoutRounding="True"
+             ClipToBounds="True"
+             Focusable="False">
+    <!-- 静态句尾对齐方案：超宽时 TextBlock 用 TranslateTransform 左移，让句尾顶住右边缘，
+         左侧超出部分靠 ClipToBounds 裁掉（效果 ...句尾]）。不滚动、无动画。
+         宽度用 TextBlock.Measure 直接量，不依赖布局事件时序。
+         注意：Canvas 自身 DesiredSize 恒为 0，必须给显式 Height 才能撑起行高，
+         否则整行塌成 0 → 什么都不显示。Height 在代码里随字号更新，此处给兜底。 -->
+    <Canvas x:Name="HostCanvas" ClipToBounds="True" Height="18" MinHeight="1">
+        <TextBlock x:Name="MainText" Text=""
+                   Canvas.Left="0" Canvas.Top="0"
+                   Foreground="{Binding Foreground, ElementName=Root}"
+                   FontFamily="{Binding FontFamily, ElementName=Root}"
+                   FontSize="{Binding TextFontSize, ElementName=Root}"
+                   FontWeight="{Binding TextFontWeight, ElementName=Root}"
+                   TextAlignment="Left" TextWrapping="NoWrap">
+            <TextBlock.RenderTransform>
+                <TranslateTransform x:Name="Shift" X="0" Y="0" />
+            </TextBlock.RenderTransform>
+        </TextBlock>
+    </Canvas>
+</UserControl>

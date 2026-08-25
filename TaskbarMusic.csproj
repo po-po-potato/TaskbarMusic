@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- 托盘图标用 WinForms NotifyIcon（框架自带，零第三方依赖）；
+         移除其隐式全局 using，避免 UserControl/Color/Application 等 WPF 类型二义性，
+         WinForms 类型仅在 TrayIcon.cs 内用完整限定名 -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon></ApplicationIcon>
+    <AssemblyName>TaskbarMusic</AssemblyName>
+    <RootNamespace>TaskbarMusic</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+  </ItemGroup>
+
+  <!-- 排除旧的 obj/obj_mvvm 目录：它们里面有 .g.cs 和 .baml 文件，会被 WPF 编译器当源文件编译导致重复定义 -->
+  <ItemGroup>
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="obj_mvvm\**\*.cs" />
+    <Page Remove="obj\**\*.xaml" />
+    <Page Remove="obj_mvvm\**\*.xaml" />
+    <None Remove="obj\**" />
+    <None Remove="obj_mvvm\**" />
+  </ItemGroup>
+
+</Project>

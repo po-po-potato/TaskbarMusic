@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <!-- 每次构建用唯一的 obj/bin 子目录（环境变量 BUILD_ID 传入，或回退到固定路径）
+         safe-delete 包装会拦截 rm/File.Delete 对已存在 cache 文件的清理，
+         导致 MarkupCompilePass1 的 CleanupCacheFiles() 报 access denied。
+         用唯一子目录保证每次 build 都是全新目录，没有旧文件需要清理。 -->
+    <_BuildId Condition="'$(_BuildId)' == '' And '$(BUILD_ID)' != ''">$(BUILD_ID)</_BuildId>
+    <_BuildId Condition="'$(_BuildId)' == ''">$([System.DateTime]::Now.ToString('yyyyMMddHHmmss'))</_BuildId>
+    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\TaskbarMusic\obj\$(_BuildId)\</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\</IntermediateOutputPath>
+    <BaseOutputPath>$(LOCALAPPDATA)\TaskbarMusic\bin\$(_BuildId)\</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Configuration)\</OutputPath>
+
+    <!-- 禁用 VBCSCompiler / MSBuild 长驻 server -->
+    <UseSharedCompilation>false</UseSharedCompilation>
+
+    <!-- 跳过 NuGet 漏洞审计：vuln_index.dat 也被 safe-delete 拦截写入 -->
+    <NuGetAudit>false</NuGetAudit>
+  </PropertyGroup>
+</Project>

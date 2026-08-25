@@ -1,0 +1,96 @@
+<UserControl x:Class="TaskbarMusic.MusicModule"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:TaskbarMusic">
+
+    <UserControl.Resources>
+        <!-- 播控按钮：默认全透明，鼠标 hover 才显（Opacity 由代码控制）-->
+        <Style x:Key="IconBtn" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#FFEFEFEF" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- 模块根：背景由 ApplyBackground 动态设置（黑底 / 封面取色 + 右侧渐变）-->
+    <Grid x:Name="ModuleRoot">
+        <!-- 封面层：左侧顶边、撑满高度、正方形（Width 由代码绑定到 Height）-->
+        <Image x:Name="CoverImage"
+               HorizontalAlignment="Left"
+               VerticalAlignment="Stretch"
+               Stretch="UniformToFill" />
+
+        <!-- 文字层（三层结构，CSS overflow:hidden + transform 标准模式）：
+             外层 TextClipWindow = 恒定两行高的裁剪窗口（ClipToBounds，条内 Center）
+             内层 TextClip = 三行布局容器（Auto 高度，Top 对齐，不限高）
+             最内 TextPanel = 挂 PanelShift RenderTransform 上滚
+             关键（方案推论）：Row2 必须物理在布局容器的高度内
+             WPF 才渲染它——之前把裁剪(两行高)和布局(三行高)合在同一层，Row2 的
+             测量约束被父容器可用高度压没 = 不渲染 = 永远"直接出现"。分层后 Row2
+             恒在无限高的布局容器内可渲染，只是被外层窗口裁掉视觉；换句上滚时
+             进入窗口可视区自然可见。
+             外层窗口恒定高度 → 动画全程无 Center 偏移 → 无收尾跳变。-->
+        <Grid x:Name="TextClipWindow" VerticalAlignment="Center" HorizontalAlignment="Stretch"
+              Margin="0,0,8,0" ClipToBounds="True">
+            <Grid x:Name="TextClip" VerticalAlignment="Top">
+                <Grid x:Name="TextPanel" VerticalAlignment="Top">
+                    <Grid.RenderTransform>
+                        <TranslateTransform x:Name="PanelShift" X="0" Y="0" />
+                    </Grid.RenderTransform>
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:Name="RowTitle" Height="Auto" />
+                        <RowDefinition x:Name="RowArtist" Height="Auto" />
+                        <RowDefinition x:Name="RowNext" Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <local:MarqueeTextBlock x:Name="TitleMarquee" Grid.Row="0"
+                                            Foreground="White"
+                                            TextFontSize="16" TextFontWeight="SemiBold" />
+                    <local:MarqueeTextBlock x:Name="ArtistMarquee" Grid.Row="1" Margin="0,2,0,0"
+                                            Foreground="#B0FFFFFF"
+                                            TextFontSize="13" TextFontWeight="Normal" />
+                    <!-- 升位放大用渲染层 ScaleTransform（代码创建，避免 NameScope 冲突）——
+                         不触发布局重排：每帧改 TextFontSize 会触发 Relayout 的 FormattedText
+                         测量导致掉帧，滚入过程因帧数不足不可感知（卡顿+突现的根因）-->
+                    <local:MarqueeTextBlock x:Name="NextMarquee" Grid.Row="2" Margin="0,2,0,0"
+                                            Foreground="#B0FFFFFF"
+                                            TextFontSize="13" TextFontWeight="Normal" />
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <!-- 播控浮在最上层；自身完全透明（不被颜色染），按钮加阴影确保彩色封面上清晰 -->
+        <StackPanel x:Name="ControlsPanel" Orientation="Horizontal"
+                    HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Margin="0,0,8,0" Opacity="0"
+                    Background="Transparent">
+            <StackPanel.Effect>
+                <DropShadowEffect Color="Black" BlurRadius="6" ShadowDepth="0" Opacity="0.85" />
+            </StackPanel.Effect>
+            <Button x:Name="PrevButton" Style="{StaticResource IconBtn}" Content="&#xE892;" Click="OnPrevClick" ToolTip="上一首" />
+            <Button x:Name="PlayPauseButton" Style="{StaticResource IconBtn}" Content="&#xE768;" Click="OnPlayPauseClick" ToolTip="播放/暂停" />
+            <Button x:Name="NextButton" Style="{StaticResource IconBtn}" Content="&#xE893;" Click="OnNextClick" ToolTip="下一首" />
+        </StackPanel>
+    </Grid>
+</UserControl>

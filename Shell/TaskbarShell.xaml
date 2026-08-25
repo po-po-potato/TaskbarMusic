@@ -1,0 +1,47 @@
+<Window x:Class="TaskbarMusic.TaskbarShell"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TaskbarMusic"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        AllowsTransparency="True">
+
+    <Window.Resources>
+        <!-- 隐形拖拽边手柄（左/右两侧用于调整宽度） -->
+        <Style x:Key="EdgeThumb" TargetType="Thumb">
+            <Setter Property="Width" Value="6" />
+            <Setter Property="Cursor" Value="SizeWE" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Rectangle Fill="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- 根容器：壳默认背景（深色渐变）；模块在自己的 View 上叠背景（如封面取色） -->
+    <Grid x:Name="RootBorder">
+        <!-- 右键菜单改用 WinForms ContextMenuStrip（与托盘共用）——WPF ContextMenu
+             关闭后干扰同进程窗口渲染，导致从右键条开的设置窗 resize 卡；WinForms
+             菜单独立于 WPF 渲染/事件体系，托盘走它一直不卡。见 TaskbarShell.BuildContextMenu。 -->
+
+        <!-- 模块区域：V1 单模块需占满整条 → Grid（子元素默认 Stretch）；
+             M2 起换 E6 槽位容器（ItemsControl + 横向模板） -->
+        <Grid x:Name="ModulePanel" />
+
+        <!-- 左右隐形宽度调节手柄（最上层，位于模块之上） -->
+        <Thumb x:Name="LeftThumb" Style="{StaticResource EdgeThumb}"
+               HorizontalAlignment="Left" VerticalAlignment="Stretch"
+               DragDelta="LeftThumb_DragDelta" DragCompleted="EdgeThumb_DragCompleted" />
+        <Thumb x:Name="RightThumb" Style="{StaticResource EdgeThumb}"
+               HorizontalAlignment="Right" VerticalAlignment="Stretch"
+               DragDelta="RightThumb_DragDelta" DragCompleted="EdgeThumb_DragCompleted" />
+    </Grid>
+</Window>
