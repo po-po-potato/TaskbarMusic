@@ -15,4 +15,4 @@ PRD.md
 .vs/
 *.user
 *.suo
-publish/
+publish*/
