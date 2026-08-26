@@ -1,9 +1,24 @@
 ﻿<Application x:Class="TaskbarMusic.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:TaskbarMusic"
-             StartupUri="Shell/TaskbarShell.xaml">
+             StartupUri="Shell/TaskbarShell.xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!-- OnExplicitShutdown：条窗口是 Shell_TrayWnd 的子窗口，任务栏重启时
+         可能被递归销毁——默认 OnLastWindowClose 会把整个进程带走（任务栏重启后
+         条消失的根因之一）。改为只在用户显式退出（ExitApp）时结束进程 -->
     <Application.Resources>
-         
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- ThemesDictionary（主题 brush）+ ControlsDictionary（隐式控件样式）：
+                     必须合并到 Application.Resources 才是 Wpf.Ui 官方推荐路径。
+                     之前 V1 担心全局合并"污染"条改为窗级——实际条上原生 Button
+                     全用显式 IconBtn 样式（覆盖优先级高于 ControlsDictionary 隐式样式），
+                     无原生 CheckBox/RadioButton/TextBox/ComboBox，零影响 -->
+                <ui:ThemesDictionary Theme="Light" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>

@@ -1,79 +1,172 @@
 <UserControl x:Class="TaskbarMusic.MusicSettingsSection"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:TaskbarMusic">
 
     <UserControl.Resources>
         <local:EnumToBoolConverter x:Key="EnumToBool" />
-        <local:LenientDoubleConverter x:Key="LenientDouble" />
-        <!-- 样式（GroupHeader/SettingRow/RowHint/NumberBox）定义在 SettingsWindow.Resources，
-             独立 UserControl 编译期看不到，必须用 DynamicResource 运行时解析 -->
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
+    <!-- 音乐分区（2026-08-26 四轮重排）：歌词（开关/模式下拉/过渡/翻译·随模式显隐）→
+         外观（取色/字号滑块）→ 播放（偏移滑块/暂停补偿）。
+         展示模式改下拉框；换句过渡/显示翻译不再"禁用置灰"而是**随模式显隐**
+         （不适用即整卡不出现，避免用户困惑"为什么是灰的"）：
+         - 歌名+歌词 / 单行 → 换句过渡可见（双行自带垂直滚动）
+         - 单行 → 显示翻译可见（其余模式两行已满塞翻译必挤掉原生内容） -->
+
     <StackPanel>
-        <!-- ===== 外观 ===== -->
-        <TextBlock Style="{DynamicResource GroupHeader}" Text="外观" Margin="0,0,0,4" />
+        <!-- ===== 歌词：开关在组头，后续项随开关禁用 ===== -->
+        <TextBlock Text="歌词" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
-        <Border Style="{DynamicResource SettingRow}">
-            <StackPanel>
-                <TextBlock Text="背景跟随封面取色" />
-                <TextBlock Style="{DynamicResource RowHint}" Text="从当前歌曲封面提取主色作为条背景" />
-            </StackPanel>
-        </Border>
-        <Border Style="{DynamicResource SettingRow}">
-            <CheckBox Content="显示当前歌词" IsChecked="{Binding ShowLyric}" />
-        </Border>
+        <ui:Card Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="显示当前歌词" VerticalAlignment="Center" />
+                <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowLyric}" />
+            </Grid>
+        </ui:Card>
 
-        <!-- ===== 歌词模式 ===== -->
         <StackPanel IsEnabled="{Binding ShowLyric}">
-            <TextBlock Style="{DynamicResource GroupHeader}" Text="歌词模式" />
-
-            <StackPanel Margin="2,4,0,0">
-                <RadioButton GroupName="LyricMode" Content="A　歌名 + 歌词（默认）"
-                             IsChecked="{Binding LyricMode, Converter={StaticResource EnumToBool}, ConverterParameter=ReplaceArtist, Mode=TwoWay}" />
-                <RadioButton GroupName="LyricMode" Content="B　歌词在上，歌名在下"
-                             IsChecked="{Binding LyricMode, Converter={StaticResource EnumToBool}, ConverterParameter=SwapTitleArtist, Mode=TwoWay}" />
-                <RadioButton GroupName="LyricMode" Content="C　只显示歌词（大字）"
-                             IsChecked="{Binding LyricMode, Converter={StaticResource EnumToBool}, ConverterParameter=LyricOnly, Mode=TwoWay}" />
-                <RadioButton GroupName="LyricMode" Content="D　歌词原文 + 翻译（双行）"
-                             IsChecked="{Binding LyricMode, Converter={StaticResource EnumToBool}, ConverterParameter=Translate, Mode=TwoWay}" />
-                <RadioButton GroupName="LyricMode" Content="E　当前句 + 下一句（垂直跟随）"
-                             IsChecked="{Binding LyricMode, Converter={StaticResource EnumToBool}, ConverterParameter=Follow, Mode=TwoWay}" />
-            </StackPanel>
-
-            <Border Style="{DynamicResource SettingRow}" Margin="0,8,0,0">
+            <ui:Card Margin="0,0,0,8">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="歌词偏移（秒）" VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <TextBox Grid.Column="1" Style="{DynamicResource NumberBox}"
-                             Text="{Binding LyricOffsetSec, Converter={StaticResource LenientDouble}, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="正值延后、负值提前（±10 内）" />
-                    <TextBlock Grid.Column="2" Style="{DynamicResource RowHint}"
-                               Text="校正歌词整体提前/滞后" Margin="12,0,0,0" />
+                    <StackPanel>
+                        <TextBlock Text="展示模式" VerticalAlignment="Center" />
+                        <TextBlock Text="单行模式可追加翻译行；双行模式换句自带垂直滚动"
+                                   FontSize="12" TextWrapping="Wrap" Margin="0,2,12,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <!-- 原生 ComboBox：经 App 级 ControlsDictionary 隐式样式 Fluent 化
+                         （Wpf.Ui 无 ui:ComboBox，字体下拉同款写法） -->
+                    <ComboBox Grid.Column="1" Width="220" VerticalAlignment="Center"
+                              ItemsSource="{Binding ModeOptions}"
+                              DisplayMemberPath="Label" SelectedValuePath="Value"
+                              SelectedValue="{Binding LyricMode, Mode=TwoWay}" />
                 </Grid>
-            </Border>
+            </ui:Card>
 
-            <Border Style="{DynamicResource SettingRow}">
-                <WrapPanel>
-                    <TextBlock Text="换句过渡" VerticalAlignment="Center" Margin="0,0,12,6" />
-                    <RadioButton GroupName="LineTransition" Content="硬切"
-                                 IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=None, Mode=TwoWay}" Margin="0,0,12,6" />
-                    <RadioButton GroupName="LineTransition" Content="淡入"
-                                 IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Fade, Mode=TwoWay}" Margin="0,0,12,6" />
-                    <RadioButton GroupName="LineTransition" Content="上滑"
-                                 IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Slide, Mode=TwoWay}" Margin="0,0,0,6" />
-                </WrapPanel>
-            </Border>
+            <!-- 换句过渡：双行模式整卡隐藏（换句自带垂直滚动，无行内过渡概念） -->
+            <ui:Card Margin="0,0,0,8"
+                     Visibility="{Binding IsLineTransitionVisible, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock Text="换句过渡" Margin="0,0,0,6"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <WrapPanel>
+                        <RadioButton GroupName="LineTransition" Content="硬切"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=None, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="淡入"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Fade, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="上滑"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Slide, Mode=TwoWay}" Margin="0,0,0,6" />
+                    </WrapPanel>
+                </StackPanel>
+            </ui:Card>
+
+            <!-- 翻译：单行模式专属（其余模式两行已满塞翻译必挤掉原生内容）→ 整卡隐藏 -->
+            <ui:Card Margin="0,0,0,8"
+                     Visibility="{Binding IsTranslationVisible, Converter={StaticResource BoolToVis}}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="显示翻译" />
+                        <TextBlock Text="原文下方追加当前句翻译（需歌词含翻译数据）"
+                                   FontSize="12" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding ShowTranslation}" />
+                </Grid>
+            </ui:Card>
         </StackPanel>
 
-        <!-- ===== 播放 ===== -->
-        <TextBlock Style="{DynamicResource GroupHeader}" Text="播放" />
+        <!-- ===== 外观：取色/字号（滑块拖动实时预览条上文字） ===== -->
+        <TextBlock Text="外观" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
-        <Border Style="{DynamicResource SettingRow}">
+        <ui:Card Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="背景跟随封面取色" />
+                    <TextBlock Text="从当前歌曲封面提取主色作为条背景"
+                               FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding BackgroundFollowCover}" />
+            </Grid>
+        </ui:Card>
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="歌名字号" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding TitleFontSize, StringFormat={}{0:0} pt}"
+                               FontWeight="SemiBold" VerticalAlignment="Center" />
+                </Grid>
+                <Slider Minimum="9" Maximum="36"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding TitleFontSize, Mode=TwoWay}" Margin="0,0,0,10" />
+                <Grid Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="艺术家字号" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding ArtistFontSize, StringFormat={}{0:0} pt}"
+                               FontWeight="SemiBold" VerticalAlignment="Center" />
+                </Grid>
+                <Slider Minimum="9" Maximum="36"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding ArtistFontSize, Mode=TwoWay}" />
+            </StackPanel>
+        </ui:Card>
+
+        <!-- ===== 播放：对齐类参数（歌词偏移/暂停补偿都属"播放校准"语义） ===== -->
+        <TextBlock Text="播放" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="歌词偏移" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LyricOffsetMs, StringFormat={}{0} ms}"
+                               FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0" />
+                </Grid>
+                <Slider Minimum="-2000" Maximum="2000"
+                        TickFrequency="100" IsSnapToTickEnabled="True"
+                        Value="{Binding LyricOffsetMs, Mode=TwoWay}"
+                        TickPlacement="BottomRight" Margin="0,10,0,4"
+                        ToolTip="正值延后、负值提前（±2s，100ms 步进）" />
+                <TextBlock Text="校正歌词整体提前/滞后"
+                           FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
+        <ui:Card Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -81,53 +174,16 @@
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="暂停淡出补偿（秒）" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <TextBox Grid.Column="1" Style="{DynamicResource NumberBox}"
-                         Text="{Binding PauseFadeOutSec, Converter={StaticResource LenientDouble}, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Grid.Column="2" Style="{DynamicResource RowHint}"
-                           Text="每次暂停多偏一点就调它" Margin="12,0,0,0" />
+                <ui:NumberBox Grid.Column="1" Width="110"
+                              Value="{Binding PauseFadeOutSec, Mode=TwoWay}" />
+                <TextBlock Grid.Column="2" Text="每次暂停多偏一点就调它"
+                           FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </Grid>
-        </Border>
+        </ui:Card>
 
-        <!-- ===== 字体 ===== -->
-        <TextBlock Style="{DynamicResource GroupHeader}" Text="字体" />
-
-        <Border Style="{DynamicResource SettingRow}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="字体" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <ComboBox Grid.Column="1" x:Name="CbFontFamily"
-                          IsEditable="True"
-                          Text="{Binding FontFamily, UpdateSourceTrigger=PropertyChanged}"
-                          ItemsSource="{Binding SystemFonts}" />
-            </Grid>
-        </Border>
-
-        <Border Style="{DynamicResource SettingRow}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="歌名字号" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <TextBox Grid.Column="1" Style="{DynamicResource NumberBox}"
-                         Text="{Binding TitleFontSize, Converter={StaticResource LenientDouble}, UpdateSourceTrigger=PropertyChanged}" />
-                <TextBlock Grid.Column="2" />
-                <TextBlock Grid.Column="3" Text="艺术家字号" VerticalAlignment="Center" Margin="0,0,12,0" />
-                <TextBox Grid.Column="4" Style="{DynamicResource NumberBox}"
-                         Text="{Binding ArtistFontSize, Converter={StaticResource LenientDouble}, UpdateSourceTrigger=PropertyChanged}" />
-            </Grid>
-        </Border>
-
-        <!-- 应用（字号输入框失焦兜底写回，归属音乐分区） -->
-        <Border Style="{DynamicResource SettingRow}" BorderThickness="0">
-            <Button Content="应用" Command="{Binding ApplyCommand}"
-                    HorizontalAlignment="Right" Width="90" />
-        </Border>
+        <!-- 应用（字号滑块失焦兜底写回，归属音乐分区） -->
+        <Button Content="应用" Command="{Binding ApplyCommand}"
+                HorizontalAlignment="Right" Width="90" Margin="0,4,4,0" />
     </StackPanel>
 </UserControl>

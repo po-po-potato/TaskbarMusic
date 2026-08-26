@@ -331,14 +331,15 @@ public partial class MusicModule : UserControl, ITaskbarModule
         string? lyricText = null;
         string? nextText = null;          // E 模式 Row1：下一句
         string? nextNextText = null;      // E 模式 Row2：下下句（换句时从窗口底滚入的内容）
-        string? translation = null;       // D 模式次行：当前句翻译
+        string? translation = null;       // 翻译叠加次行：当前句翻译
         double lyricDurationSec = 0; // 当前句到下一句的时长（秒），滚动窗口基准
         double lyricElapsedSec = 0;  // 本句已消耗秒数（含提前量），滚动起点对齐用
         if (_currentLyric.Count > 0)
         {
             // 全局提前量 + 用户偏移（C12）：等价于"用 N 秒后的进度去查当前行"
+            // （偏移 2026-08-26 改毫秒单位）
             var now = info.EstimateNowPosition() + LyricLeadTime
-                      + TimeSpan.FromSeconds(_config.LyricOffsetSec);
+                      + TimeSpan.FromMilliseconds(_config.LyricOffsetMs);
             int idx = LrcParser.FindCurrentIndex(_currentLyric, now);
             if (idx >= 0)
             {
@@ -350,7 +351,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
                     : 5.0;
                 lyricElapsedSec = (now - start).TotalSeconds;
 
-                // D 模式：当前句翻译（时间戳对齐）
+                // 翻译叠加：当前句翻译（时间戳对齐）
                 translation = LrcParser.FindTranslation(_currentTranslation, start);
                 // E 模式：下一句(Row1) + 下下句(Row2，换句时滚入)
                 nextText = (idx + 1 < _currentLyric.Count) ? _currentLyric[idx + 1].Text : null;
@@ -638,6 +639,11 @@ public partial class MusicModule : UserControl, ITaskbarModule
         }
 
         bool hasLyric = lyricText != null;
+        // 翻译叠加（2026-08-26 三轮定稿）：单行模式专属——歌名+歌词/双行两行已满，
+        // 塞翻译必挤掉原生内容（歌名让位/预览让位），语义劣化不做；
+        // 且双行换句滚动路径（StartFollowScroll→RenderLyricWithScroll）translation
+        // 传 null，历史实现也从未真正稳定支持过
+        bool showTranslation = _config.ShowTranslation && translation != null;
         double? window = hasLyric ? Math.Max(0.5, lyricDurationSec) : null;
         var joined = string.IsNullOrWhiteSpace(_currentArtistFallback)
             ? _currentTitleFallback
@@ -645,39 +651,31 @@ public partial class MusicModule : UserControl, ITaskbarModule
 
         return _config.LyricMode switch
         {
-            // A：歌名 / 歌词（无歌词回退艺术家）
+            // 歌名+歌词：歌名 / 歌词（无歌词回退艺术家）
             LyricDisplayMode.ReplaceArtist => new[]
             {
                 new LineSpec(_currentTitleFallback),
                 new LineSpec(hasLyric ? lyricText! : _currentArtistFallback, window, lyricElapsedSec),
             },
 
-            // B：歌词（无歌词回退歌名）/ 歌名
-            LyricDisplayMode.SwapTitleArtist => new[]
-            {
-                new LineSpec(hasLyric ? lyricText! : _currentTitleFallback, window, lyricElapsedSec),
-                new LineSpec(_currentTitleFallback),
-            },
-
-            // D：双行歌词（原文 / 翻译）；无翻译退化为单行（C 行为）
-            LyricDisplayMode.Translate when hasLyric && translation != null => new[]
-            {
-                new LineSpec(lyricText!, window, lyricElapsedSec),
-                new LineSpec(translation, window, lyricElapsedSec),
-            },
-
-            // E：双行跟随（当前句 / 下一句预览）；无歌词回退单行
+            // 双行：当前句 / 下一句预览
             LyricDisplayMode.Follow when hasLyric => new[]
             {
                 new LineSpec(lyricText!, window, lyricElapsedSec),
                 new LineSpec(nextText ?? "", Preview: true), // 下一句预览：静止截断
             },
 
-            // C 及各模式的无歌词回退：只显示一行（歌词 / 歌名+艺术家拼一行）
-            _ => new[]
-            {
-                new LineSpec(hasLyric ? lyricText! : joined, window, lyricElapsedSec),
-            },
+            // 单行：开翻译时追加翻译行（"原文（大字）/ 翻译"两行）；无歌词回退歌名+艺术家拼一行
+            _ => showTranslation && hasLyric
+                ? new[]
+                {
+                    new LineSpec(lyricText!, window, lyricElapsedSec),
+                    new LineSpec(translation!),
+                }
+                : new[]
+                {
+                    new LineSpec(hasLyric ? lyricText! : joined, window, lyricElapsedSec),
+                },
         };
     }
 

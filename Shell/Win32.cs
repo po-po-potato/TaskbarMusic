@@ -60,11 +60,25 @@ internal static class Win32
     internal const int WS_POPUP = unchecked((int)0x80000000);
     internal const int WS_CHILD = 0x40000000;
 
+    // ===== 任务栏重启逃逸（父窗口销毁通知）=====
+    /// <summary>父窗口销毁前发给子窗口的通知；wParam 低 16 位是事件（WM_DESTROY=父正在销毁）</summary>
+    internal const int WM_PARENTNOTIFY = 0x0210;
+    internal const int WM_DESTROY = 0x0002;
+    internal const int SW_HIDE = 0;
+    internal const int SW_SHOW = 5;
+
+    [DllImport("user32.dll")]
+    internal static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
     // ===== DWM（设置窗 Mica 背景用）=====
     [DllImport("dwmapi.dll")]
     internal static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
     /// <summary>DWMWA_SYSTEMBACKDROP_TYPE：Win11 22H2+ 系统背景材质（Mica/Acrylic）</summary>
     internal const int DWMWA_SYSTEM_BACKDROP_TYPE = 38;
+    /// <summary>DWMWA_USE_IMMERSIVE_DARK_MODE：DWM 绘制层（标题栏/Mica/Acrylic 染色）
+    /// 的深浅开关。WPF 主题字典只管控件层，DWM 层深浅必须用这个属性单独喂——
+    /// 不设的话深色主题下 Mica/Acrylic 渲染成白色（2026-08-26 实锤）</summary>
+    internal const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct MARGINS { public int Left, Right, Top, Bottom; }

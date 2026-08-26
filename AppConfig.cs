@@ -5,23 +5,24 @@ using System.Text.Json;
 namespace TaskbarMusic;
 
 /// <summary>
-/// 歌词展示模式
+/// 歌词展示模式（2026-08-26 精简：删 B/SwapTitleArtist 与 A 只是内容互换使用率低；
+/// 删 D/Translate 改为 ShowTranslation 独立复选框叠加到任意模式。
+/// 枚举值号保留防旧 config 数字错位）
+/// UI 显示名按内容行数命名：ReplaceArtist="歌名+歌词"、LyricOnly="单行"、Follow="双行"。
 /// </summary>
 public enum LyricDisplayMode
 {
-    /// <summary>A：歌名行不动，歌词替换艺术家行（默认）</summary>
+    /// <summary>歌名+歌词：上行歌名不动，歌词替换艺术家行（默认）</summary>
     ReplaceArtist = 0,
 
-    /// <summary>B：歌词放在歌名行（大字），歌名挤到艺术家行（小字）；无歌词时歌名行回退到歌名</summary>
-    SwapTitleArtist = 1,
+    // 1 = 原 SwapTitleArtist（已删）
 
-    /// <summary>C：只显示歌词，单行垂直居中、大字号</summary>
+    /// <summary>单行：只显示歌词，单行垂直居中、大字号</summary>
     LyricOnly = 2,
 
-    /// <summary>D：双行歌词（原文+翻译）；无翻译退化为 C 行为</summary>
-    Translate = 3,
+    // 3 = 原 Translate（已删，并入 ShowTranslation）
 
-    /// <summary>E：双行跟随（当前句+下一句预览），换句垂直滚动（Apple Music 式）</summary>
+    /// <summary>双行：当前句+下一句预览，换句垂直滚动（Apple Music 式）</summary>
     Follow = 4,
 }
 
@@ -77,11 +78,16 @@ public class AppConfig
     /// <summary>艺术家字号</summary>
     public double ArtistFontSize { get; set; } = 13;
 
-    /// <summary>是否在艺术家行显示当前歌词（找不到歌词时回退显示艺术家）</summary>
+    /// <summary>是否显示当前歌词（找不到歌词时回退显示艺术家）</summary>
     public bool ShowLyric { get; set; } = true;
 
     /// <summary>歌词展示模式（仅当 ShowLyric=true 时生效）</summary>
     public LyricDisplayMode LyricMode { get; set; } = LyricDisplayMode.ReplaceArtist;
+
+    /// <summary>显示翻译（叠加项）：仅单行模式生效——原文下方追加翻译行，
+    /// 取代原 D 模式（D 本质就是"原文/翻译"两行）。
+    /// 其余模式两行已满塞翻译必挤掉原生内容，2026-08-26 定稿不做</summary>
+    public bool ShowTranslation { get; set; } = false;
 
     /// <summary>"只显示歌词"模式下的字号（默认放大到歌名同级）</summary>
     public double LyricOnlyFontSize { get; set; } = 22;
@@ -93,7 +99,11 @@ public class AppConfig
     /// </summary>
     public double PauseFadeOutSec { get; set; } = 0;
 
-    /// <summary>歌词全局偏移（秒）：正值延后、负值提前，0.1s 步进微调与演唱对齐</summary>
+    /// <summary>歌词全局偏移（毫秒）：正值延后、负值提前，100ms 步进微调与演唱对齐。
+    /// 2026-08-26 由 LyricOffsetSec（秒）迁移而来——Load 里做旧值换算</summary>
+    public int LyricOffsetMs { get; set; } = 0;
+
+    /// <summary>[已废弃] 旧单位秒的歌词偏移，仅作 Load 迁移读入，不再使用</summary>
     public double LyricOffsetSec { get; set; } = 0;
 
     /// <summary>换句过渡效果（C11）；默认淡入</summary>
@@ -102,6 +112,12 @@ public class AppConfig
     /// <summary>设置窗背景材质（提议做成设置项）；默认纯色</summary>
     public WindowBackdrop WindowBackdrop { get; set; } = WindowBackdrop.None;
 
+    /// <summary>设置窗宽度（DIP）——关闭时保存实际值，打开时恢复（记忆用户拖动）</summary>
+    public double SettingsWindowWidth { get; set; } = 1000;
+
+    /// <summary>设置窗高度（DIP）——关闭时保存实际值，打开时恢复</summary>
+    public double SettingsWindowHeight { get; set; } = 560;
+
     private static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaskbarMusic");
 
@@ -109,17 +125,24 @@ public class AppConfig
 
     public static AppConfig Load()
     {
+        AppConfig cfg = new();
         try
         {
             if (File.Exists(ConfigPath))
             {
                 var json = File.ReadAllText(ConfigPath);
-                var cfg = JsonSerializer.Deserialize<AppConfig>(json);
-                if (cfg != null) return cfg;
+                cfg = JsonSerializer.Deserialize<AppConfig>(json) ?? new AppConfig();
             }
         }
         catch { /* 配置坏了就回默认值 */ }
-        return new AppConfig();
+
+        // 一次性迁移：旧 LyricOffsetSec（秒）→ LyricOffsetMs（毫秒）
+        if (cfg.LyricOffsetMs == 0 && cfg.LyricOffsetSec != 0)
+        {
+            cfg.LyricOffsetMs = (int)(cfg.LyricOffsetSec * 1000);
+            cfg.LyricOffsetSec = 0;
+        }
+        return cfg;
     }
 
     public void Save()

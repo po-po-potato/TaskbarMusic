@@ -23,6 +23,10 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+    <!-- WPF UI（WPF Gallery 官方组件库）：仅设置窗局部应用（窗级合并资源字典，
+         见 ThemeService），不进 App.xaml 全局——任务栏条是直角不透明，
+         全局合并 ControlsDictionary 会立即替换条上 Button 等隐式样式 -->
+    <PackageReference Include="WPF-UI" Version="4.2.1" />
   </ItemGroup>
 
   <!-- 排除旧的 obj/obj_mvvm 目录：它们里面有 .g.cs 和 .baml 文件，会被 WPF 编译器当源文件编译导致重复定义 -->

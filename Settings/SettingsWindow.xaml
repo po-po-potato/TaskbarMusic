@@ -1,75 +1,60 @@
-<Window x:Class="TaskbarMusic.SettingsWindow"
+<ui:FluentWindow x:Class="TaskbarMusic.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:TaskbarMusic"
         Title="TaskbarMusic 设置"
-        Width="640" Height="560"
-        MinWidth="540" MinHeight="420"
+        Width="1000" Height="560"
+        MinWidth="600" MinHeight="460"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
-        Topmost="True"
-        ShowInTaskbar="False"
-        ThemeMode="System"
+        ExtendsContentIntoTitleBar="True"
+        ShowInTaskbar="True"
+        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
         FontFamily="Segoe UI Variable Display, Segoe UI"
         FontSize="14">
 
-    <!-- 设置窗（拍板方案 2）：.NET 9 WPF 内置 Fluent 主题。
-         ThemeMode="System" 只作用于本窗——深浅色跟随 Windows + 系统强调色，
-         任务栏条不受影响（条是直角不透明，PRD 定位不受益 Fluent）。
-         Mica 已禁用（深色桌面零视觉收益 + 透明渲染开销，见 .cs ApplyToolWindowStyle）。
-         字体/字号按 WPFGallery type ramp：标题 20 SemiBold / 分区标题 14 SemiBold /
-         正文 14 / 说明 12。
-         【resize 卡顿根因已修】SettingRow 分隔线曾用 DynamicResource SystemColors，
-         系统色动态解析在放大窗口时反复触发导致卡顿——二分法逐一排除
-         (Fluent 主题/Topmost/控件密度/进程嵌入/字体全部排除) 后锁定，改静态色即流畅。-->
+    <!-- ExtendsContentIntoTitleBar 必须为 True：FluentWindow 应用 backdrop 的
+         硬性前提（OnSourceInitialized→OnBackdropTypeChanged 检查，
+         false 直接抛 InvalidOperationException——2026-08-26 打开设置窗闪退实锤）。
+         Foreground 喂 Fluent 主题资源：窗口前景继承给所有分区 TextBlock——
+         不设的话继承 WPF 默认黑，深色主题下文字看不清。
+         默认宽高 1000x560（用户拖动后的实际宽高会存配置，构造时覆盖）。
+         常规窗口（非 Topmost，2026-08-26 撤浮层残留）：被遮挡时经任务栏/Alt+Tab 唤回。 -->
 
-    <Window.Resources>
-        <!-- 分区共享样式（窗级定义，独立 UserControl 分区经 DynamicResource 取用——
-             M1 已验证模式：StaticResource 在独立 UserControl 编译期解析不到窗级资源）-->
-        <Style x:Key="GroupHeader" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="0,16,0,4" />
-        </Style>
-        <!-- 设置行底部分隔线：用静态半透明灰而非 DynamicResource SystemColors——
-             系统色 DynamicResource 在 resize 时反复解析导致放大窗口卡顿（实锤，
-             二分定位）。#33808080 深浅背景下都柔和可见。-->
-        <Style x:Key="SettingRow" TargetType="Border">
-            <Setter Property="Padding" Value="2,10" />
-            <Setter Property="BorderBrush" Value="#33808080" />
-            <Setter Property="BorderThickness" Value="0,0,0,1" />
-        </Style>
-        <Style x:Key="RowHint" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="Opacity" Value="0.6" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="TextWrapping" Value="Wrap" />
-        </Style>
-        <Style x:Key="NumberBox" TargetType="TextBox">
-            <Setter Property="Width" Value="70" />
-            <Setter Property="TextAlignment" Value="Center" />
-        </Style>
-    </Window.Resources>
+    <!-- 设置窗（WPF Gallery 组件版）：FluentWindow + TitleBar + NavigationView，
+         组件来自 Wpf.Ui（WPF Gallery 官方库）。
+         主题/材质经 ThemeService 单点收敛；字典窗级合并不进 App.xaml 全局
+         （任务栏条不吃 Fluent，见 ThemeService 注释）。
+         字典在这里合并后，窗内原生控件（Button/ComboBox/RadioButton 等）
+         隐式样式自动 Fluent 化，分区不再需要窗级样式 DynamicResource hack；
+         resize 卡顿的 SystemColors DynamicResource 补丁一并消掉。-->
+
+    <ui:FluentWindow.Resources>
+        <!-- ThemesDictionary/ControlsDictionary 已在 App.Resources 合并（见 App.xaml）；
+             不在窗级重复合并——UserControl 内隐式样式查找走 Application 级更可靠
+             （WPF 隐式样式对合并字典的可见性有 quirk，App 级合并是 Wpf.Ui 官方路径） -->
+    </ui:FluentWindow.Resources>
 
     <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="170" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
 
-        <!-- 左导航（Win11 设置式：标题 + 导航列表，Fluent ListBox 样式自动应用）-->
-        <StackPanel Grid.Column="0" Margin="16,20,8,16">
-            <TextBlock Text="设置" FontSize="20" FontWeight="SemiBold" Margin="4,0,0,16" />
-            <ListBox x:Name="NavList"
-                     BorderThickness="0"
-                     Background="Transparent"
-                     SelectionChanged="OnNavSelectionChanged" />
-        </StackPanel>
+        <ui:TitleBar Grid.Row="0" x:Name="RootTitleBar" Title="TaskbarMusic 设置"
+                     ShowMaximize="False" ShowMinimize="False" />
+        <!-- TitleBar 前景色由代码喂 ApplicationTheme（见 ThemeService 注释），
+             否则标题/关闭按钮是默认淡色看不见 -->
 
-        <!-- 右内容：当前选中分区（分区实例常驻，切换只换 Content，
-             ContentControl 换 Content 会正确解除旧分区的逻辑父绑定）-->
-        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="8,20,16,16">
-            <ContentControl x:Name="SectionHost" />
-        </ScrollViewer>
+        <!-- 左导航（Win11 设置式）：分区项代码生成（壳分区 + 模块分区）。
+             NavigationView 非 ContentControl——内容区由代码 SetContent 装载
+             （分区实例常驻、切换只换 Content 的宿主装配语义与旧版一致） -->
+        <ui:NavigationView Grid.Row="1" x:Name="NavView"
+                           PaneDisplayMode="Left"
+                           IsBackButtonVisible="Collapsed"
+                           IsPaneToggleVisible="False">
+            <ui:NavigationView.MenuItems />
+        </ui:NavigationView>
     </Grid>
-</Window>
+</ui:FluentWindow>

@@ -29,6 +29,19 @@ public partial class TaskbarShell : Window
     private const double MinWidth_ = 200;
     private const double MaxWidth_ = 900;
 
+    // ===== 任务栏重启存活机制 =====
+    // 条是 Shell_TrayWnd 的子窗口（WS_CHILD），Win32 销毁父窗口时会递归销毁子窗口
+    // ——任务栏重启（explorer 重建）时条窗口被带走，进而 OnLastWindowClose 把整个
+    // 进程退掉，条从此消失（2026-08-26 "任务栏重启后不见了"根因）。
+    // 双层修复：
+    // ① WM_PARENTNOTIFY(WM_DESTROY) 逃逸：父销毁通知到达的瞬间改回 WS_POPUP +
+    //    SetParent(null) 脱离子窗口链——窗口保活（模块/托盘/媒体状态零丢失），
+    //    sticky timer 稍后自动找新任务栏重新嵌入；
+    // ② 兜底重建：逃逸万一失败窗口仍被销毁（Closed 且非用户退出）→ 异步 new 新壳
+    //    （配合 App.ShutdownMode=OnExplicitShutdownOnly 进程不再被带走）。
+    private bool _explicitExit;          // 用户显式退出（托盘/右键"退出"）
+    private bool _pendingShow = false;   // 逃逸后等重新嵌入任务栏再显示（仅逃逸路径用）
+
     // sticky 增量优化缓存：上次成功贴附时的关键参数快照。tick 时若父窗口仍是
     // tray + 这些值都没变，说明无需重新定位，直接早退——避免每 500ms 无脑
     // MoveWindow/改 Height（那串同步 Win32 + 布局是"抢 UI 线程"隐患的来源）。
@@ -56,6 +69,9 @@ public partial class TaskbarShell : Window
 
         _config = AppConfig.Load();
         Width = _config.Width;
+        // 注意：不能在这里 Visibility=Hidden 隐藏——WPF 隐藏窗口不创建 HWND，
+        // Loaded/StickToTaskbar/托盘全不会跑（2026-08-26 "rebuild 后不显示"实锤）。
+        // 首次启动保持默认显示；只有任务栏逃逸路径（Win32 层 SW_HIDE）才延迟显示。
 
         // V1 单模块：音乐（M2 起由配置驱动注册 + E6 槽位分配）
         _host.Register(new MusicModule(_config));
@@ -75,6 +91,21 @@ public partial class TaskbarShell : Window
         Loaded += TaskbarShell_Loaded;
         Closing += TaskbarShell_Closing;
 
+        // 兜底重建：逃逸万一失败，窗口被任务栏销毁带走（Closed 且非用户退出）
+        // → 异步重建新壳，等新任务栏出现重新嵌入（_pendingShow 机制控制显示时机）
+        Closed += (_, _) =>
+        {
+            if (_explicitExit) return;
+            // 先关设置窗：它持有本 shell 引用，重建后成孤儿（悬空引用 +
+            // 新壳无法复用，用户再开会开第二个设置窗——综合检查发现的 bug）
+            _settingsWindow?.Close();
+            Dispatcher.BeginInvoke(() =>
+            {
+                var shell = new TaskbarShell();
+                shell.Show();
+            });
+        };
+
         MouseLeftButtonDown += Root_MouseLeftButtonDown;
         MouseDoubleClick += Root_MouseDoubleClick;
         MouseEnter += (_, _) => _host.BroadcastHover(true);
@@ -86,6 +117,11 @@ public partial class TaskbarShell : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         var ex = Win32.GetWindowLong(hwnd, Win32.GWL_EXSTYLE);
         Win32.SetWindowLong(hwnd, Win32.GWL_EXSTYLE, ex | Win32.WS_EX_TOOLWINDOW | Win32.WS_EX_NOACTIVATE);
+
+        // 任务栏销毁逃逸钩子：父窗口 DestroyWindow 前会向子窗口发
+        // WM_PARENTNOTIFY(低16位=WM_DESTROY)——此刻脱离子窗口链即保活窗口
+        if (HwndSource.FromHwnd(hwnd) is { } source)
+            source.AddHook(ShellWndProc);
 
         // 右键条弹 WinForms 菜单（与托盘共用 BuildContextMenu）。不再用 WPF
         // ContextMenu——它关闭后干扰同进程窗口渲染（右键条开的设置窗 resize 卡），
@@ -106,6 +142,11 @@ public partial class TaskbarShell : Window
 
         // 托盘图标（右键：设置/退出；双击：设置）
         _trayIcon = new TrayIcon(this);
+
+        // dev 验证后门：TBM_AUTO_OPEN_SETTINGS=1 启动后自动开设置窗
+        // （免手动托盘交互，冒烟验证设置窗构建路径用）
+        if (Environment.GetEnvironmentVariable("TBM_AUTO_OPEN_SETTINGS") == "1")
+            Dispatcher.BeginInvoke(OpenSettings, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     /// <summary>构建右键/托盘共用的 WinForms 菜单（每次新建，避免复用状态）。
@@ -180,12 +221,55 @@ public partial class TaskbarShell : Window
 
         PositionInTaskbar(hwnd, taskbarClientHeight, dpi);
 
+        // 逃逸重嵌完成后恢复显示（仅逃逸路径：_pendingShow 由 EscapeFromDyingParent 置位，
+        // 对称地用 Win32 层恢复——逃逸时的隐藏也是 Win32 层，不碰 WPF Visibility）
+        if (_pendingShow)
+        {
+            _pendingShow = false;
+            Win32.ShowWindow(hwnd, Win32.SW_SHOW);
+        }
+
         // 更新快照
         _lastTray = tray;
         _lastTaskbarHeight = taskbarClientHeight;
         _lastDpi = dpi;
         _lastWidth = _config.Width;
         _lastOffsetX = _config.OffsetX;
+    }
+
+    // ===== 任务栏重启逃逸 =====
+
+    /// <summary>窗口消息钩子：监听父（任务栏）销毁通知，触发逃逸</summary>
+    private IntPtr ShellWndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == Win32.WM_PARENTNOTIFY && (wParam.ToInt64() & 0xFFFF) == Win32.WM_DESTROY)
+        {
+            EscapeFromDyingParent(hwnd);
+        }
+        return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// 父（任务栏）正在销毁：立即改回 WS_POPUP 并 SetParent(null) 脱离子窗口链，
+    /// 避免被 DestroyWindow 递归销毁。窗口保活（模块/托盘/媒体状态零丢失），
+    /// sticky timer 自动找新任务栏重新嵌入后经 _pendingShow 恢复显示。
+    /// 注意：处于父销毁流程的 hook 回调中——只用 Win32 调用（SetParent/ShowWindow），
+    /// 不碰 WPF Visibility（会触发布局/消息重入，有风险）。
+    /// </summary>
+    private void EscapeFromDyingParent(IntPtr hwnd)
+    {
+        int style = Win32.GetWindowLong(hwnd, Win32.GWL_STYLE);
+        Win32.SetWindowLong(hwnd, Win32.GWL_STYLE, (style & ~Win32.WS_CHILD) | Win32.WS_POPUP);
+        Win32.SetParent(hwnd, IntPtr.Zero);
+        Win32.ShowWindow(hwnd, Win32.SW_HIDE);
+        _pendingShow = true;
+
+        // 复位交互状态；幂等重启 sticky（设置窗打开路径曾 Stop 过；
+        // tick 守卫会跳过设置窗开启期间的 tick，关闭后自然恢复重嵌）
+        _dragPending = false;
+        _isDragging = false;
+        _isResizing = false;
+        _stickyTimer.Start();
     }
 
     /// <summary>在任务栏客户区内定位（客户区坐标：左上角为原点）。
@@ -331,12 +415,21 @@ public partial class TaskbarShell : Window
         StickToTaskbar(force: true);
     }
 
+    /// <summary>重置宽度（条右键菜单：重置回调）</summary>
     internal void ResetWidth()
     {
         _config.Width = 360;
         Width = 360;
         _config.Save();
         StickToTaskbar(force: true);
+    }
+
+    /// <summary>设置窗改字体后刷新条上文字（V1 单模块直连；M2 槽位模型时改广播）</summary>
+    internal void RefreshModulesTextStyle()
+    {
+        foreach (var module in _host.Modules)
+            if (module is MusicModule music)
+                music.ApplyTextStyle();
     }
 
     // ===== 设置窗口（壳层基础设施 A8：分区容器）=====
@@ -351,14 +444,17 @@ public partial class TaskbarShell : Window
 
         _settingsWindow = new SettingsWindow(this, _host);
         // 主窗口已嵌入任务栏（WS_CHILD 子窗口），不能作为 Owner（会抛异常）。
-        // 设置窗口自身 Topmost=True 保证浮在任务栏之上。
+        // 设置窗为常规窗口（非 Topmost）：ShowInTaskbar=True 保证被遮挡时可经
+        // 任务栏/Alt+Tab 唤回（Topmost 是旧浮层设计残留，2026-08-26 移除）。
         _settingsWindow.Closed += (_, _) =>
         {
             _settingsWindow = null;
             _stickyTimer.Start();
         };
 
-        _settingsWindow.SourceInitialized += (_, _) => _settingsWindow.ApplyToolWindowStyle();
+        // 背景材质已由 FluentWindow.ApplicationBackdrop 内建接管
+        // （SettingsWindow 构造时经 ThemeService.MapBackdrop 从 config 映射），
+        // 不再需要 SourceInitialized 手写 DWM 三步法
         _stickyTimer.Stop();
         _settingsWindow.Show();
     }
@@ -374,9 +470,12 @@ public partial class TaskbarShell : Window
         OpenSettings(); // null 时新建（材质已在 config 里，新窗构造时读取）
     }
 
-    /// <summary>退出应用（条右键菜单 / 托盘右键共用入口）</summary>
+    /// <summary>退出应用（条右键菜单 / 托盘右键共用入口）。
+    /// 显式退出标志必须先于 Shutdown 设置——Closed 兜底重建靠它区分
+    /// "用户退出（不重建）"与"任务栏重启窗口被带走（要重建）"</summary>
     internal void ExitApp()
     {
+        _explicitExit = true;
         _config.Save();
         Application.Current.Shutdown();
     }

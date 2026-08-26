@@ -1,29 +1,62 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
+using Wpf.Ui.Controls;
 
 namespace TaskbarMusic;
 
 /// <summary>
-/// 设置窗（壳层基础设施 A8，Fluent 重做版）：左导航 + 右内容区。
-/// 分区实例常驻（宿主持有），本窗每次打开仅装配——切换分区只换 ContentControl.Content
+/// 设置窗（WPF Gallery 组件版）：FluentWindow + TitleBar + NavigationView。
+/// 分区实例常驻（宿主持有），本窗每次打开仅装配——切换分区只换 SectionHost.Content
 /// （setter 会正确解除旧分区逻辑父绑定）。窗口关闭时置空 Content 断开逻辑父引用
 /// （WPF 窗口销毁不会自动断开，不清掉下次开窗 Add 同一分区会抛
 /// "指定的元素已经是另一个元素的逻辑子元素"导致闪退——M1 已踩坑）。
+/// 背景材质：FluentWindow.WindowBackdropType 内建接管（替代旧手写 DWM 三步法，
+/// 手写 DwmSetWindowAttribute/DwmExtendFrameIntoClientArea 全部删除）；
+/// 切换材质仍走壳层 ReopenSettings（backdrop 是窗口级一次性设置，重开干净生效）。
 /// 字体全局设置：跟随用户在音乐分区选择的字体（回退系统 UI 字体），改字体实时生效。
 /// </summary>
-public partial class SettingsWindow : Window
+public partial class SettingsWindow : FluentWindow
 {
     private readonly FrameworkElement[] _sections;
-    private readonly MusicSettingsSection? _musicSection;
     private readonly AppConfig _config;
+    private readonly ShellSettingsSection? _shellSection;
+
+    /// <summary>右侧内容宿主（代码构造，经 INavigationView.ReplaceContent 装载；
+    /// 24px 左右留白对齐 WPF Gallery 设置页呼吸感）</summary>
+    private readonly ContentControl SectionHost = new() { Margin = new Thickness(24, 8, 24, 24) };
+
+    /// <summary>窗级主题（构造时由 ThemeService.ApplySystemTheme 返回，
+    /// OnSourceInitialized 喂给 DWM 层用）</summary>
+    private Wpf.Ui.Appearance.ApplicationTheme _theme;
 
     public SettingsWindow(TaskbarShell shell, ModuleHost host)
     {
         InitializeComponent();
         _config = shell.Config;
+
+        // 主题单点（ThemeService）：窗级深浅色跟随系统 + 喂 TitleBar 前景色，
+        // 材质映射到内建 backdrop；_theme 留给 OnSourceInitialized 喂 DWM 层
+        // （App.OnStartup 已提前应用过一次，此处幂等重应用确保新会话正确）
+        _theme = ThemeService.ApplySystemTheme();
+        RootTitleBar.ApplicationTheme = _theme;
+        WindowBackdropType = ThemeService.MapBackdrop(_config.WindowBackdrop);
+
+        // 宽高记忆：恢复用户上次拖动后的尺寸（XAML 默认 800x560 只是无配置时的兜底）
+        if (_config.SettingsWindowWidth >= MinWidth)
+            Width = _config.SettingsWindowWidth;
+        if (_config.SettingsWindowHeight >= MinHeight)
+            Height = _config.SettingsWindowHeight;
+
+        // 关闭时保存实际宽高（含材质切换的重开路径——重开前旧窗关闭也会存）
+        Closing += (_, _) =>
+        {
+            _config.SettingsWindowWidth = ActualWidth;
+            _config.SettingsWindowHeight = ActualHeight;
+            _config.Save();
+        };
 
         // 分区与导航项一一对应：壳分区（常规）+ 各模块分区（V1：音乐）
         var titles = new List<string>();
@@ -42,26 +75,113 @@ public partial class SettingsWindow : Window
             }
         }
         _sections = sections.ToArray();
-        _musicSection = _sections.Length > 1 ? _sections[1] as MusicSettingsSection : null;
+        _shellSection = _sections.Length > 0 ? _sections[0] as ShellSettingsSection : null;
 
         for (int i = 0; i < titles.Count; i++)
-            NavList.Items.Add(new ListBoxItem { Content = titles[i], Padding = new Thickness(10, 8, 10, 8) });
-
-        NavList.SelectedIndex = 0;
-
-        // 字体全局设置（）：按用户选择的字体渲染整个设置窗，
-        // 用户字体优先、回退系统 UI 字体；改字体实时跟随（VM TextStyleChanged）。
-        ApplyGlobalFont(shell.Config.FontFamily);
-        if (_musicSection != null)
         {
-            _musicSection.ViewModel.TextStyleChanged += OnGlobalFontChanged;
-            Closed += (_, _) => _musicSection.ViewModel.TextStyleChanged -= OnGlobalFontChanged;
+            // 闭包捕获索引避免经典循环变量陷阱。
+            // 库的 Navigate(Type) 会经 activator 新建页实例，与"分区实例常驻、
+            // 宿主持有"架构冲突，故不走 TargetPageType 导航——改监听 item 按下
+            // 手动切 Content，选中视觉用 IsActive 手动管理
+            int index = i;
+            var item = new NavigationViewItem
+            {
+                Content = titles[i],
+                Icon = new SymbolIcon { Symbol = IconForSection(titles[i]) },
+            };
+            item.PreviewMouseLeftButtonDown += (_, _) => SelectItem(index);
+            NavView.MenuItems.Add(item);
+        }
+
+        // 内容区宿主装载：NavigationView 非 ContentControl，接口 ReplaceContent
+        // 装入滚动宿主；分区切换只换 SectionHost.Content（装配语义与旧版一致）。
+        // 【必须在 Loaded 里调】构造期 NavigationView 尚未 ApplyTemplate，
+        // UpdateContent 访问模板 part（内容呈现器）为 null → NRE 闪退
+        // （2026-08-26 打开设置窗闪退实锤）；初始选中一并在此做
+        Loaded += (_, _) =>
+        {
+            ((INavigationView)NavView).ReplaceContent(new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = SectionHost,
+            }, null);
+            if (_sections.Length > 0)
+                SelectItem(0);
+        };
+
+        // 字体全局跟随：改监听壳分区 VM（字体 2026-08-26 迁常规分区）——
+        // 字体变化实时渲染整个设置窗；构造时先按当前配置应用初始字体
+        ApplyGlobalFont(shell.Config.FontFamily);
+        if (_shellSection != null)
+        {
+            _shellSection.ViewModel.FontChanged += OnGlobalFontChanged;
+            Closed += (_, _) => _shellSection.ViewModel.FontChanged -= OnGlobalFontChanged;
         }
 
         Closed += (_, _) => SectionHost.Content = null;
     }
 
-    private void OnGlobalFontChanged() => ApplyGlobalFont(_musicSection!.ViewModel.FontFamily);
+    /// <summary>选中导航项：切分区内容 + 手动维护 item 选中视觉（IsActive）</summary>
+    private void SelectItem(int index)
+    {
+        for (int i = 0; i < NavView.MenuItems.Count; i++)
+        {
+            if (NavView.MenuItems[i] is NavigationViewItem it)
+                it.IsActive = i == index;
+        }
+        if (index >= 0 && index < _sections.Length)
+            SectionHost.Content = _sections[index];
+    }
+
+    /// <summary>导航图标（Fluent System Icons；编译期枚举校验，写错 XAML 编译报错）</summary>
+    private static SymbolRegular IconForSection(string title) => title switch
+    {
+        "常规" => SymbolRegular.Settings24,
+        "音乐" => SymbolRegular.MusicNote224,
+        _ => SymbolRegular.Circle24,
+    };
+
+    /// <summary>SourceInitialized：hwnd 已创建——同步 DWM 层深浅 + 挂系统主题变化钩子。
+    /// base 调用让 FluentWindow 先应用 backdrop，再喂 dark mode 属性
+    /// （动态生效，backdrop 后设一次确保染色正确）</summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        ThemeService.ApplyDarkModeAttribute(this, _theme);
+
+        // 系统深浅色实时跟随：hook WM_SETTINGCHANGE(ImmersiveColorSet)
+        // （与 Wpf.Ui SystemThemeWatcher 同款消息，但自主控制——Watcher 会强制
+        // UpdateBackground 覆盖用户选的材质，不用）
+        if (System.Windows.Interop.HwndSource.FromHwnd(
+                new System.Windows.Interop.WindowInteropHelper(this).Handle) is { } source)
+        {
+            source.AddHook(ThemeChangeWndProc);
+        }
+    }
+
+    /// <summary>系统主题变化钩子：重新应用全套主题（字典 + TitleBar + 背景序列）。
+    /// 背景必须走 WindowBackgroundManager.UpdateBackground 完整序列
+    /// （移除旧 backdrop → 清窗口背景 → 按当前材质重应用 → dark mode →
+    /// 清标题栏背景）——缺它会出现：纯色模式顶栏/左栏残留旧主题色、
+    /// 亚克力模式 backdrop 丢失变纯色（2026-08-26 实锤，重新切材质才能恢复）。
+    /// 传当前 WindowBackdropType 属性值——材质是用户选择，主题切换不改变它</summary>
+    private System.IntPtr ThemeChangeWndProc(System.IntPtr hwnd, int msg,
+        System.IntPtr wParam, System.IntPtr lParam, ref bool handled)
+    {
+        const int WM_SETTINGCHANGE = 0x001A;
+        if (msg == WM_SETTINGCHANGE && lParam != System.IntPtr.Zero
+            && System.Runtime.InteropServices.Marshal.PtrToStringUni(lParam) == "ImmersiveColorSet")
+        {
+            _theme = ThemeService.ApplySystemTheme();
+            RootTitleBar.ApplicationTheme = _theme;
+            Wpf.Ui.Appearance.WindowBackgroundManager.UpdateBackground(
+                this, _theme, WindowBackdropType);
+        }
+        return System.IntPtr.Zero;
+    }
+
+    private void OnGlobalFontChanged() =>
+        ApplyGlobalFont(_shellSection?.ViewModel.FontFamily ?? "");
 
     /// <summary>用户字体（单一字体构造——与条上歌词 ApplyTextStyle 同款用法，
     /// 该用法下 PingFang SC 渲染正常；复合 fallback 串 "A, B" 在代码构造下解析
@@ -71,62 +191,5 @@ public partial class SettingsWindow : Window
         if (string.IsNullOrWhiteSpace(family)) return;
         try { FontFamily = new FontFamily(family); }
         catch { /* 非法字体名保持默认 */ }
-    }
-
-    private void OnNavSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        int i = NavList.SelectedIndex;
-        if (i >= 0 && i < _sections.Length)
-            SectionHost.Content = _sections[i];
-    }
-
-    /// <summary>
-    /// 窗口 Mica 背景（Win11 22H2+，SYSTEMBACKDROP_TYPE=2）。
-    /// Mica 生效需三步（缺一则静默退化纯色——用户反复"看不到 Mica 但 Acrylic
-    /// 能看到"的根因：只做了后两步，漏了①）：
-    /// ① DwmExtendFrameIntoClientArea 整窗扩展（margins 全 -1）——Mica 硬性前提，
-    ///    Acrylic 不需要故之前能看到 Acrylic 看不到 Mica
-    /// ② 两层透明：CompositionTarget.BackgroundColor + Window.Background = Transparent
-    /// ③ DwmSetWindowAttribute(SYSTEMBACKDROP_TYPE, 2)
-    /// sticky 卡顿真凶已修（是 timer 抢 UI 线程非透明管线），故 Mica 可安全启用。
-    /// </summary>
-    /// <summary>
-    /// 设置窗背景材质（提议做成设置项，三选一切换对比）：
-    /// - None(1)：显式关闭 backdrop——不能用"不调用"实现！ThemeMode="System"
-    ///   （Fluent 主题）在 Win11 上会自动给窗口应用系统 Mica（wbset16 实测：代码
-    ///   禁用 Mica 后激活态仍有染色 = ThemeMode 自带的），必须显式设
-    ///   DWMSBT_NONE 才是真纯色（20:54"纯色不生效"实锤）。
-    /// - Mica(2)：壁纸着色 + DwmExtendFrameIntoClientArea 扩展帧
-    /// - Acrylic(3)：实时模糊
-    /// 材质需在 SourceInitialized 后由 TaskbarShell 调用；配置在窗口构造时读取
-    /// （切换材质 = 改配置后重开设置窗生效）。
-    /// </summary>
-    public void ApplyToolWindowStyle()
-    {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == System.IntPtr.Zero) return;
-
-        var backdrop = _config.WindowBackdrop;
-        int value = backdrop switch
-        {
-            WindowBackdrop.Mica => 2,
-            WindowBackdrop.Acrylic => 3,
-            _ => 1, // DWMSBT_NONE：显式关闭（压制 ThemeMode 自带的自动 Mica）
-        };
-        int hr = Win32.DwmSetWindowAttribute(hwnd, Win32.DWMWA_SYSTEM_BACKDROP_TYPE,
-                ref value, sizeof(int));
-        if (hr != 0 || backdrop == WindowBackdrop.None) return;
-
-        if (backdrop == WindowBackdrop.Mica)
-        {
-            // Mica 硬性前提：扩展帧进客户区（Acrylic 不需要）
-            var margins = new Win32.MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-            Win32.DwmExtendFrameIntoClientArea(hwnd, ref margins);
-        }
-
-        // 两层透明：① Win32 清屏层 ② WPF 层（缺①API 成功也看不到）
-        if (HwndSource.FromHwnd(hwnd)?.CompositionTarget is { } target)
-            target.BackgroundColor = Colors.Transparent;
-        Background = Brushes.Transparent;
     }
 }

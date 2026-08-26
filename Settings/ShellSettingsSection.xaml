@@ -1,63 +1,67 @@
 <UserControl x:Class="TaskbarMusic.ShellSettingsSection"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:TaskbarMusic">
 
     <UserControl.Resources>
         <local:EnumToBoolConverter x:Key="EnumToBool" />
     </UserControl.Resources>
 
-    <!-- 样式（GroupHeader/SettingRow/RowHint）定义在 SettingsWindow.Resources，
-         独立 UserControl 编译期看不到，必须用 DynamicResource 运行时解析 -->
-    <StackPanel>
-        <TextBlock Style="{DynamicResource GroupHeader}" Text="布局" Margin="0,0,0,4" />
+    <!-- 常规分区（重归类版）：字体（全局项）+ 个性化（材质/重置）。
+         布局组已删——条宽度是只读显示无交互价值，重置降级为普通行 -->
 
-        <Border Style="{DynamicResource SettingRow}">
+    <StackPanel>
+        <!-- ===== 字体：全局项，设置窗整体跟随渲染 ===== -->
+        <TextBlock Text="字体" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="条宽度" VerticalAlignment="Center" />
-                    <TextBlock Style="{DynamicResource RowHint}" Text="拖动条右缘调整；重置恢复默认" />
-                </StackPanel>
-                <TextBlock Grid.Column="1" Text="{Binding WindowWidth, StringFormat={}{0:0} px}"
-                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                <TextBlock Grid.Column="0" Text="界面字体" VerticalAlignment="Center" Margin="0,0,12,0" />
+                <!-- 纯下拉不可输入：SelectedItem 按值匹配列表项，非法值由 VM 构造时回退 -->
+                <ComboBox Grid.Column="1"
+                          SelectedItem="{Binding FontFamily}"
+                          ItemsSource="{Binding SystemFonts}"
+                          ToolTip="设置窗与条上文字的字体，实时生效" />
             </Grid>
-        </Border>
+        </ui:Card>
 
-        <Border Style="{DynamicResource SettingRow}" BorderThickness="0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <Button Content="重置位置" Command="{Binding ResetPositionCommand}" Margin="0,0,8,0" />
-                <Button Content="重置宽度" Command="{Binding ResetWidthCommand}" />
-            </StackPanel>
-        </Border>
+        <!-- ===== 个性化 ===== -->
+        <TextBlock Text="个性化" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
-        <!-- 设置窗背景材质（提议做成设置项）：三选一，切换即存配置
-             并自动重开设置窗使新材质生效。-->
-        <TextBlock Style="{DynamicResource GroupHeader}" Text="设置窗背景材质" />
-
-        <Border Style="{DynamicResource SettingRow}">
+        <ui:Card Margin="0,0,0,8">
             <StackPanel>
-                <TextBlock Text="材质选择" />
-                <TextBlock Style="{DynamicResource RowHint}"
-                           Text="Mica/Acrylic 需 Win11 22H2+；切换后设置窗自动重开生效" />
+                <TextBlock Text="设置窗背景材质" />
+                <TextBlock Text="Mica/Acrylic 需 Win11 22H2+；切换后设置窗自动重开生效"
+                           FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <WrapPanel Margin="0,8,0,0">
+                    <RadioButton GroupName="WindowBackdrop" Content="纯色"
+                                 IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=None, Mode=TwoWay}" Margin="0,0,12,6" />
+                    <RadioButton GroupName="WindowBackdrop" Content="Mica"
+                                 IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=Mica, Mode=TwoWay}" Margin="0,0,12,6" />
+                    <RadioButton GroupName="WindowBackdrop" Content="Acrylic"
+                                 IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=Acrylic, Mode=TwoWay}" Margin="0,0,0,6" />
+                </WrapPanel>
             </StackPanel>
-        </Border>
-        <Border Style="{DynamicResource SettingRow}">
-            <WrapPanel Margin="0,6,0,0">
-                <RadioButton GroupName="WindowBackdrop" Content="纯色"
-                             IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=None, Mode=TwoWay}" Margin="0,0,12,6" />
-                <RadioButton GroupName="WindowBackdrop" Content="Mica"
-                             IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=Mica, Mode=TwoWay}" Margin="0,0,12,6" />
-                <RadioButton GroupName="WindowBackdrop" Content="Acrylic"
-                             IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=Acrylic, Mode=TwoWay}" Margin="0,0,0,6" />
-            </WrapPanel>
-        </Border>
-        <Border Style="{DynamicResource SettingRow}" BorderThickness="0">
-            <TextBlock Style="{DynamicResource RowHint}"
-                       Text="纯色最流畅；Mica 壁纸着色（本机仅激活态可见）；Acrylic 实时模糊效果最明显但拖动窗口有开销" />
-        </Border>
+        </ui:Card>
+
+        <TextBlock Text="纯色最流畅；Mica 壁纸着色（本机仅激活态可见）；Acrylic 实时模糊效果最明显但拖动窗口有开销"
+                   FontSize="12" TextWrapping="Wrap" Margin="4,0,0,0"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+        <!-- 重置操作（原布局组降级）：条拖坏了救回来用 -->
+        <ui:Card Margin="0,8,0,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="重置条位置" Command="{Binding ResetPositionCommand}" Margin="0,0,8,0" />
+                <Button Content="重置条宽度" Command="{Binding ResetWidthCommand}" />
+            </StackPanel>
+        </ui:Card>
     </StackPanel>
 </UserControl>
