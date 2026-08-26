@@ -79,6 +79,7 @@ public partial class MarqueeTextBlock : UserControl
         if (e.Property == TextProperty)
         {
             m._lastText = m.MainText.Text; // 推挤过渡需要旧句（推上淡出的那一行）
+            m._lastShiftX = m.Shift.X;      // 旧句滚动位——必须在下方 Relayout 重置前抓（动画生效值）
             m.MainText.Text = (string)e.NewValue;
         }
         if (!m._suppressRelayout) m.Relayout();
@@ -110,6 +111,11 @@ public partial class MarqueeTextBlock : UserControl
 
     /// <summary>上一句文本快照（Text 变更时抓取，仅供推挤过渡渲染 GhostText）</summary>
     private string? _lastText;
+
+    /// <summary>上一句滚动位快照（Text 变更瞬间、Relayout 重置前抓取；
+    /// DP getter 返回动画生效值。Ghost 退场钉在旧句真实位置，
+    /// 否则长句滚到后半段换句时会跳回句首再退场）</summary>
+    private double _lastShiftX;
 
     /// <summary>
     /// 预览模式（E 模式次行"下一句"用）：不滚动，超宽时句首左对齐、右侧截断。
@@ -159,7 +165,7 @@ public partial class MarqueeTextBlock : UserControl
             GhostText.BeginAnimation(OpacityProperty, null);
             GhostText.Text = _lastText;
             GhostText.Visibility = Visibility.Visible;
-            GhostShift.X = Shift.X; // 与新句静止位水平对齐（同推挤的简化）
+            GhostShift.X = _lastShiftX; // 旧句真实滚动位（防长句换句跳回句首）
             GhostShift.Y = 0;
             var gEase = new QuadraticEase { EasingMode = EasingMode.EaseIn };
             var gDur = TimeSpan.FromMilliseconds(120);
@@ -246,7 +252,7 @@ public partial class MarqueeTextBlock : UserControl
         {
             GhostText.Text = _lastText;
             GhostText.Visibility = Visibility.Visible;
-            GhostShift.X = Shift.X; // 与新句静止位水平对齐
+            GhostShift.X = _lastShiftX; // 旧句真实滚动位（防长句换句跳回句首）
             GhostShift.Y = 0;
 
             var gy = new DoubleAnimation(0, -h, dur) { EasingFunction = ease };
