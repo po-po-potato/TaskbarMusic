@@ -1,14 +1,12 @@
 <Project>
-  <PropertyGroup>
-    <!-- 每次构建用唯一的 obj/bin 子目录（环境变量 BUILD_ID 传入，或回退到固定路径）
-         safe-delete 包装会拦截 rm/File.Delete 对已存在 cache 文件的清理，
-         导致 MarkupCompilePass1 的 CleanupCacheFiles() 报 access denied。
-         用唯一子目录保证每次 build 都是全新目录，没有旧文件需要清理。 -->
-    <_BuildId Condition="'$(_BuildId)' == '' And '$(BUILD_ID)' != ''">$(BUILD_ID)</_BuildId>
-    <_BuildId Condition="'$(_BuildId)' == ''">$([System.DateTime]::Now.ToString('yyyyMMddHHmmss'))</_BuildId>
-    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\TaskbarMusic\obj\$(_BuildId)\</BaseIntermediateOutputPath>
+  <!-- 本机开发 quirk 模式：仅当 BUILD_ID 环境变量存在时激活（build.bat 与 agent 构建都会设置）。
+       作用：把 obj/bin 重定向到 %LOCALAPPDATA% 唯一子目录，绕过本机 safe-delete 包装
+       对 MarkupCompilePass1 CleanupCacheFiles 的拦截（access denied）。
+       公开构建 / CI（不设 BUILD_ID）走仓库内标准 obj/bin + 标准 NuGet 审计。 -->
+  <PropertyGroup Condition="'$(BUILD_ID)' != ''">
+    <BaseIntermediateOutputPath>$(LOCALAPPDATA)\TaskbarMusic\obj\$(BUILD_ID)\</BaseIntermediateOutputPath>
     <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)\</IntermediateOutputPath>
-    <BaseOutputPath>$(LOCALAPPDATA)\TaskbarMusic\bin\$(_BuildId)\</BaseOutputPath>
+    <BaseOutputPath>$(LOCALAPPDATA)\TaskbarMusic\bin\$(BUILD_ID)\</BaseOutputPath>
     <OutputPath>$(BaseOutputPath)$(Configuration)\</OutputPath>
 
     <!-- 禁用 VBCSCompiler / MSBuild 长驻 server -->

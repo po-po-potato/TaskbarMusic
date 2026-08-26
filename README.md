@@ -7,6 +7,7 @@ A lightweight music controller and live lyrics display embedded directly into th
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2B-lightgrey)
 ![.NET](https://img.shields.io/badge/.NET-9-purple)
+![Build](https://github.com/po-po-potato/TaskbarMusic/actions/workflows/build.yml/badge.svg)
 
 ## What it does
 
@@ -16,22 +17,22 @@ TaskbarMusic lives inside your taskbar — no floating windows, no extra docks. 
 
 - **Taskbar-embedded** — uses `SetParent` to live inside `Shell_TrayWnd`; survives taskbar/explorer restarts, DPI changes and display switches
 - **System-wide media follow** — SMTC-based, works with any player that reports to Windows media controls
-- **Five lyric display modes**
-  - **A** — song title + current lyric line
-  - **B** — lyric on top, title below
-  - **C** — lyrics only (large font, single line)
-  - **D** — bilingual: original + translation
-  - **E** — Apple Music-style follow mode: current line + next line preview with smooth vertical scroll animation
+- **Three lyric display modes**
+  - **Title + Lyric** — song title on top, current line below
+  - **Single line** — the current line only, large font
+  - **Two lines** — current line + next-line preview, Apple Music-style smooth vertical scroll on line change
+- **Seven line-change transitions** — hard cut, fade, slide, zoom, blur, blur+zoom (Apple Music-style) and push (old line slides out, new line slides in)
+- **Optional translation line** (single-line mode) when the lyric source provides translated lyrics
 - **Marquee scrolling** for lines wider than the bar (three-phase: hold → scroll → hold, anchored to line timing)
-- **Lyric sources** — NetEase Cloud Music API with LRCLIB fallback; global offset fine-tuning (±10 s)
+- **Lyric sources** — NetEase Cloud Music API with LRCLIB fallback; global offset fine-tuning (±2 s in 100 ms steps)
 - **Cover-following background** — extracts dominant color from album art
 - **Playback controls** — play/pause, prev/next on hover
-- **Fluent settings window** — .NET 9 Fluent theme, light/dark follows system, background material switchable (Solid / Mica / Acrylic)
-- **Font customization** — any installed font family and sizes
+- **Fluent settings window** — built with [WPF UI](https://github.com/lepoco/wpfui) (WPF Gallery) components: Windows 11 Settings-style navigation, light/dark follows the system live, background material switchable (Solid / Mica / Acrylic), remembered size
+- **Font customization** — any installed font family and sizes, live preview
 
 ### Performance
 
-Designed to be the lightest in its category: single process, ~170 MB working set, no webview, no background services.
+Designed to be the lightest in its category: single process, ~100 MB working set, no webview, no background services.
 
 ## Requirements
 
@@ -45,12 +46,17 @@ Designed to be the lightest in its category: single process, ~170 MB working set
 ```bash
 git clone https://github.com/po-po-potato/TaskbarMusic.git
 cd TaskbarMusic
-./build.bat        # or: dotnet build -c Release
+dotnet build -c Release
 ```
 
-The build script pins a unique `BUILD_ID` per run (see `Directory.Build.props`) to avoid locked intermediate directories.
+Requires the .NET 9 SDK. `build.bat` is a convenience script for local development on Windows (it also launches the app after building).
 
 ## Roadmap
+
+- Word-by-word karaoke highlight (YRC timed lyrics)
+- Interlude indicator (breathing dots during instrumental gaps)
+- Secondary taskbar (multi-monitor) support
+- Simplified/Traditional Chinese conversion for lyrics
 
 TaskbarMusic focuses on the music experience. A modular multi-tool (pomodoro, weather, search...) may ship separately under a different name.
 

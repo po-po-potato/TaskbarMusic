@@ -14,6 +14,13 @@
     <ApplicationIcon></ApplicationIcon>
     <AssemblyName>TaskbarMusic</AssemblyName>
     <RootNamespace>TaskbarMusic</RootNamespace>
+    <!-- 开源元数据：设置窗"关于"页读 AssemblyVersion/InformationalVersion 显示版本号 -->
+    <Version>1.0.0</Version>
+    <Authors>po-po-potato</Authors>
+    <Product>TaskbarMusic</Product>
+    <Description>Music controller and live lyrics embedded directly into the Windows taskbar</Description>
+    <RepositoryUrl>https://github.com/po-po-potato/TaskbarMusic</RepositoryUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

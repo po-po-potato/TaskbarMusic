@@ -74,6 +74,10 @@ public partial class SettingsWindow : FluentWindow
                 sections.Add(module.SettingsSection);
             }
         }
+
+        // 关于页（开源准备）：版本号读程序集元数据，固定挂在导航末尾
+        titles.Add("关于");
+        sections.Add(new AboutSection());
         _sections = sections.ToArray();
         _shellSection = _sections.Length > 0 ? _sections[0] as ShellSettingsSection : null;
 
@@ -138,6 +142,7 @@ public partial class SettingsWindow : FluentWindow
     {
         "常规" => SymbolRegular.Settings24,
         "音乐" => SymbolRegular.MusicNote224,
+        "关于" => SymbolRegular.Info24,
         _ => SymbolRegular.Circle24,
     };
 

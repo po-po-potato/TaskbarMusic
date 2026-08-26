@@ -1,0 +1,54 @@
+<UserControl x:Class="TaskbarMusic.AboutSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+    <!-- 关于分区（2026-08-26 开源准备）：版本号读程序集元数据（csproj <Version>），
+         链接经 code-behind Process.Start 打开（UseShellExecute 走默认浏览器）。
+         纯静态内容无 VM、无绑定——不写进 AppConfig，不产生配置读写。 -->
+
+    <StackPanel>
+        <!-- 应用标识 -->
+        <ui:Card Margin="0,4,0,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="TaskbarMusic" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <TextBlock x:Name="VersionText" Text="v1.0.0" FontSize="13"
+                               VerticalAlignment="Bottom" Margin="10,0,0,3"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <TextBlock Text="住在任务栏里的歌词——无悬浮窗、无 Dock、单进程"
+                           Margin="0,6,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
+        <!-- 链接 -->
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="链接" Margin="0,0,0,8"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <ui:HyperlinkButton Content="GitHub 仓库" Margin="0,0,0,4"
+                                    Click="OnRepoClick" />
+                <ui:HyperlinkButton Content="下载更新（Releases）" Margin="0,0,0,4"
+                                    Click="OnReleasesClick" />
+                <ui:HyperlinkButton Content="问题反馈（Issues）"
+                                    Click="OnIssuesClick" />
+            </StackPanel>
+        </ui:Card>
+
+        <!-- 许可与致谢 -->
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="许可与致谢" Margin="0,0,0,8"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <TextBlock Text="本程序按 MIT 许可开源。" Margin="0,0,0,4"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock Text="界面组件 WPF UI（MIT）· MVVM 框架 CommunityToolkit.Mvvm（MIT）"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+    </StackPanel>
+</UserControl>

@@ -1,0 +1,31 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore TaskbarMusic.csproj
+
+      - name: Build (Release)
+        run: dotnet build TaskbarMusic.csproj -c Release --no-restore --nologo
+
+      # PR/主干产物直接可下载试跑（Debug 语义的 Release build，未做 self-contained publish）
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TaskbarMusic-win-x64
+          path: bin/Release/net9.0-windows10.0.19041.0/
+          if-no-files-found: error
