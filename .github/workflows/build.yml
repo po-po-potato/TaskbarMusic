@@ -3,8 +3,12 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -29,3 +33,21 @@ jobs:
           name: TaskbarMusic-win-x64
           path: bin/Release/net9.0-windows10.0.19041.0/
           if-no-files-found: error
+
+      # tag 推送（v*）：self-contained 单文件 publish（免装 .NET 运行时，与 README 承诺一致），
+      # 打 zip 并创建 GitHub Release，notes 取 CHANGELOG.md
+      - name: Publish (self-contained, tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: dotnet publish TaskbarMusic.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish --nologo
+
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Compress-Archive -Path 'publish/*' -DestinationPath "TaskbarMusic-${{ github.ref_name }}-win-x64.zip"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: CHANGELOG.md
+          files: TaskbarMusic-${{ github.ref_name }}-win-x64.zip
