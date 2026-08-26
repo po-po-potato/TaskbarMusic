@@ -40,6 +40,10 @@ public partial class MusicModule : UserControl, ITaskbarModule
     // hover 时让出歌词位置，回到"歌名/艺术家"经典两行；离开后再恢复歌词
     private bool _isHovering;
 
+    // hover 进出让位/恢复的渲染：换句过渡全局固定用最普通的 Fade 淡入，
+    // 不跟 LineTransition 设置走（2026-08-26 Glenn：hover 不上推挤等重效果）
+    private bool _hoverPlainTransition;
+
     private TaskbarShell? _shell;
     private MusicSettingsSection? _settingsSection;
 
@@ -152,16 +156,21 @@ public partial class MusicModule : UserControl, ITaskbarModule
         _isHovering = hovering;
 
         _lastLyricLine = "<FORCE>";
-        if (hovering)
+        _hoverPlainTransition = true;
+        try
         {
-            // E 模式滚动动画期间不抢跑（动画完成后的渲染走 ComposeLines
-            // 会自动带上 hover 让位状态）；非动画期立即让位
-            if (!_followAnimating) RenderLyric(null);
+            if (hovering)
+            {
+                // E 模式滚动动画期间不抢跑（动画完成后的渲染走 ComposeLines
+                // 会自动带上 hover 让位状态）；非动画期立即让位
+                if (!_followAnimating) RenderLyric(null);
+            }
+            else
+            {
+                RefreshLyricLine();
+            }
         }
-        else
-        {
-            RefreshLyricLine();
-        }
+        finally { _hoverPlainTransition = false; }
     }
 
     /// <summary>
@@ -319,6 +328,11 @@ public partial class MusicModule : UserControl, ITaskbarModule
     private void RefreshLyricLine()
     {
         if (!_config.ShowLyric || _media == null) return;
+        // hover 让位期间文字固定为"歌名/艺术家"：歌词 tick 不再重渲染。
+        // 否则每句歌词切换 dedup key 变化 → RenderLyric 反复触发，
+        // PushPair 模式下表现为"hover 后还在不停推挤"（2026-08-26）。
+        // hover 移出由 OnHoverChanged 显式调 RefreshLyricLine 恢复歌词。
+        if (_isHovering) return;
         // E 模式滚动动画进行中：拒绝一切重渲染（防抢跑）。
         // RefreshLyricLine 的触发源除了 250ms tick 还有媒体事件
         // （OnMediaChanged→ApplyStaticTextsByMode）、hover 移出、歌词加载完成——
@@ -512,16 +526,106 @@ public partial class MusicModule : UserControl, ITaskbarModule
         _lastLyricLine = key;
         _lastRenderedMode = _config.LyricMode;
 
+        // hover 期间文字固定"最普通效果"：_hoverPlainTransition 覆盖进出瞬间，
+        // _isHovering 兜底其余渲染源（切歌 OnMediaChanged→RenderLyric(null)、
+        // 歌词加载完成等）——hover 下永远 Fade，绝不触发 PushPair 整块推挤
+        var transition = (_hoverPlainTransition || _isHovering)
+            ? LineTransition.Fade
+            : _config.LineTransition;
+        bool pairPush = transition == LineTransition.PushPair
+                        && _config.LyricMode != LyricDisplayMode.Follow;
+
+        // 双行推挤：先冻结旧块（文本+滚动位+样式）到 Ghost 实时面板——
+        // 必须在 ComposeLines/ApplyLineLayout 改样式之前抓
+        if (pairPush) FreezeGhostPanel();
+
         var specs = ComposeLines(lyricText, lyricDurationSec, lyricElapsedSec, translation, nextText);
         ApplyLineLayout(specs.Length);
 
         for (int i = 0; i < specs.Length && i < _lines.Length; i++)
             SetLineContent(_lines[i], specs[i].Text, specs[i].LyricWindowSec, specs[i].LyricElapsedSec,
-                specs[i].Preview);
+                specs[i].Preview, transition);
+
+        if (pairPush) BeginPairPushTransition();
 
         // E 模式第三行（NextMarquee）：常驻装"下下句"，天然落窗口下方被裁——
         // 换句动画上移时从窗口底真实滚入。非 E 模式塌 0 恢复干净两行。
         ApplyFollowThirdLine(nextNextText);
+    }
+
+    /// <summary>
+    /// 双行推挤准备：把当前两行（文本+当前滚动位+样式）冻结复制到 Ghost 实时面板。
+    /// 用实时控件而非 RenderTargetBitmap 位图——位图离屏渲染无 ClearType、
+    /// 分数 DPI 下重采样发虚，换图瞬间有可感知的"变淡"质量台阶（2026-08-26）。
+    /// 首帧未布局完（窗口过小）则跳过，退化为无旧块直接换。
+    /// </summary>
+    private void FreezeGhostPanel()
+    {
+        if (!IsLoaded || TextClip.ActualWidth < 10 || TextClip.ActualHeight < 10)
+            return;
+        CopyFrozenRow(TitleMarquee, TitleGhost);
+        CopyFrozenRow(ArtistMarquee, ArtistGhost);
+        GhostPanel.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>旧行 → Ghost 行：样式对齐（含字体，防 CJK 回退合成加粗）+ 文本钉在当前滚动位</summary>
+    private static void CopyFrozenRow(MarqueeTextBlock src, MarqueeTextBlock dst)
+    {
+        dst.FontFamily = src.FontFamily;
+        dst.TextFontWeight = src.TextFontWeight;
+        dst.TextFontSize = src.TextFontSize;
+        dst.Foreground = src.Foreground;
+        dst.Visibility = src.Visibility; // 单行模式次行折叠需同步
+        dst.FreezeSnapshot(src.Text, src.CurrentShiftX);
+    }
+
+    /// <summary>
+    /// 双行推挤（整块换句，SPlayer transition-group 语义的窗口级版本）：
+    /// 旧块（Ghost 实时面板，已冻结在旧内容/旧滚动位）与新块（TextPanel）
+    /// 整块对推——旧块推出窗口顶、新块从窗口底推入，出/入窗边缘由窗口裁切。
+    /// 400ms CubicEase EaseInOut（近似 cubic-bezier(0.4,0,0.2,1)）。
+    /// 纯位移无 opacity 淡化，旧块是实时控件无位图质量台阶——
+    /// 与 Follow 滚动"旧句 100% 不透明硬推出窗"审美一致。
+    /// 行程 = TextClipWindow 高（两行场景即两行高；单行场景退化为单行高）。
+    /// 仅非 Follow 模式触发（Follow 的换句过渡 = PanelShift 垂直滚动，同 transform 冲突）。
+    /// </summary>
+    private void BeginPairPushTransition()
+    {
+        if (GhostPanel.Visibility != Visibility.Visible) return;
+        double h = TextClipWindow.ActualHeight;
+        if (h < 4) return;
+
+        var ease = new System.Windows.Media.Animation.CubicEase
+        {
+            EasingMode = System.Windows.Media.Animation.EasingMode.EaseInOut
+        };
+        var dur = TimeSpan.FromMilliseconds(400);
+
+        // 清残留动画拿回本地值控制权（动画值优先于本地值）
+        PanelShift.BeginAnimation(TranslateTransform.YProperty, null);
+        GhostPanelShift.BeginAnimation(TranslateTransform.YProperty, null);
+
+        // 旧块：原位起，整块推出窗口顶（不透明，边缘被窗口裁切）
+        GhostPanelShift.Y = 0;
+        var gy = new System.Windows.Media.Animation.DoubleAnimation(0, -h, dur) { EasingFunction = ease };
+        gy.Completed += (_, _) =>
+        {
+            GhostPanelShift.BeginAnimation(TranslateTransform.YProperty, null);
+            GhostPanel.Visibility = Visibility.Collapsed;
+            TitleGhost.Text = "";
+            ArtistGhost.Text = "";
+        };
+        GhostPanelShift.BeginAnimation(TranslateTransform.YProperty, gy);
+
+        // 新块：窗口底整块推入（不透明）
+        PanelShift.Y = h;
+        var py = new System.Windows.Media.Animation.DoubleAnimation(h, 0, dur) { EasingFunction = ease };
+        py.Completed += (_, _) =>
+        {
+            PanelShift.BeginAnimation(TranslateTransform.YProperty, null);
+            PanelShift.Y = 0;
+        };
+        PanelShift.BeginAnimation(TranslateTransform.YProperty, py);
     }
 
     /// <summary>
@@ -693,15 +797,19 @@ public partial class MusicModule : UserControl, ITaskbarModule
     /// 叠加会在滚动完成后重放一次 fade 造成闪烁。
     /// </summary>
     private void SetLineContent(MarqueeTextBlock line, string? text,
-        double? lyricWindowSec = null, double lyricElapsedSec = 0, bool preview = false)
+        double? lyricWindowSec = null, double lyricElapsedSec = 0, bool preview = false,
+        LineTransition transition = LineTransition.None)
     {
         string t = text ?? "";
         bool textChanged = line.Text != t;
         line.PreviewMode = preview;
         line.Text = t; // 触发 OnContentChanged → Relayout 静止兜底（句尾顶右/预览左截断）
 
-        if (textChanged && _config.LyricMode != LyricDisplayMode.Follow)
-            line.BeginTransition(_config.LineTransition); // C11：硬切/淡入/上滑/缩放/模糊/模糊缩放
+        // 双行推挤的整块动画由模块层（RenderLyric→BeginPairPushTransition）接管，
+        // 逐行过渡跳过防叠加冲突
+        if (textChanged && _config.LyricMode != LyricDisplayMode.Follow
+            && transition != LineTransition.PushPair)
+            line.BeginTransition(transition); // 硬切/淡入/上滑/缩放/模糊/模糊缩放/推挤
 
         if (lyricWindowSec is > 0.5)
             line.StartLine(lyricElapsedSec, lyricWindowSec.Value);
@@ -891,12 +999,16 @@ public partial class MusicModule : UserControl, ITaskbarModule
         else ApplyBackground(null);
     }
 
-    /// <summary>把配置里的字体应用到所有行（字号/字重归 ApplyLineLayout 管）</summary>
+    /// <summary>把配置里的字体应用到所有行（字号/字重归 ApplyLineLayout 管）。
+    /// Ghost 双行必须一起换——漏掉会落回默认字体，中文走 CJK 回退 + SemiBold
+    /// 合成加粗，推挤开局 ghost 行1 比正常重一档（2026-08-26"ExtraBold"根因）。</summary>
     public void ApplyTextStyle()
     {
         var family = new FontFamily("Segoe UI");
         try { family = new FontFamily(_config.FontFamily); } catch { }
         foreach (var line in _lines) line.FontFamily = family;
+        TitleGhost.FontFamily = family;
+        ArtistGhost.FontFamily = family;
         ApplyLineLayout(2);
     }
 

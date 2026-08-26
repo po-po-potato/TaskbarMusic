@@ -48,8 +48,13 @@ public enum LineTransition
     /// <summary>模糊缩放：模糊+缩放+淡入三合一（AMLL 换句复合签名效果）</summary>
     BlurZoom = 5,
 
-    /// <summary>推挤：旧句整行推上淡出 + 新句整行从下方推入（400ms，仿 SPlayer 任务栏歌词）</summary>
+    /// <summary>推挤（单行）：旧句整行推上淡出 + 新句整行从下方推入（400ms，仿 SPlayer 任务栏歌词），
+    /// 各行独立在自己行高内推</summary>
     Push = 6,
+
+    /// <summary>推挤（双行）：两行作为整块换句——旧块整体推出窗口顶、
+    /// 新块从窗口底整块推入（模块层 PanelShift 位移 + 位图快照承载旧块）</summary>
+    PushPair = 7,
 }
 
 /// <summary>设置窗背景材质（Win11 22H2+ DWM backdrop；切换后重开设置窗生效）</summary>

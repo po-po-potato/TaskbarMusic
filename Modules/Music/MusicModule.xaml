@@ -78,6 +78,26 @@
                                             TextFontSize="13" TextFontWeight="Normal" />
                 </Grid>
             </Grid>
+
+            <!-- 双行推挤的旧块载体：实时 Ghost 双行（文本+滚动位+样式从活动行冻结复制，
+                 零位图零渲染质量台阶——RenderTargetBitmap 无 ClearType + 分数 DPI 重采样
+                 会让换图瞬间"变淡"，2026-08-26 弃用）。画在 TextPanel 之上，被窗口裁剪。 -->
+            <Grid x:Name="GhostPanel" Visibility="Collapsed" VerticalAlignment="Top"
+                  IsHitTestVisible="False">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="GhostPanelShift" X="0" Y="0" />
+                </Grid.RenderTransform>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <local:MarqueeTextBlock x:Name="TitleGhost" Grid.Row="0"
+                                        Foreground="White"
+                                        TextFontSize="16" TextFontWeight="SemiBold" />
+                <local:MarqueeTextBlock x:Name="ArtistGhost" Grid.Row="1" Margin="0,2,0,0"
+                                        Foreground="#B0FFFFFF"
+                                        TextFontSize="13" TextFontWeight="Normal" />
+            </Grid>
         </Grid>
 
         <!-- 播控浮在最上层；自身完全透明（不被颜色染），按钮加阴影确保彩色封面上清晰 -->

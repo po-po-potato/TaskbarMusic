@@ -81,8 +81,32 @@ public partial class MarqueeTextBlock : UserControl
             m._lastText = m.MainText.Text; // 推挤过渡需要旧句（推上淡出的那一行）
             m.MainText.Text = (string)e.NewValue;
         }
-        m.Relayout();
+        if (!m._suppressRelayout) m.Relayout();
     }
+
+    /// <summary>
+    /// 冻结快照（双行推挤旧块用）：写入旧句文本并钉在当前滚动位上。
+    /// 走实时控件而非 RenderTargetBitmap 位图——位图离屏渲染无 ClearType、
+    /// 分数 DPI 下重采样发虚，换图瞬间有可感知的"变淡"质量台阶（2026-08-26）。
+    /// </summary>
+    public void FreezeSnapshot(string text, double x)
+    {
+        _suppressRelayout = true;
+        try { Text = text; }
+        finally { _suppressRelayout = false; }
+        // Canvas 需显式高（Collapsed 期间 Relayout 可能没跑过）
+        HostCanvas.Height = Math.Max(1, TextFontSize * 1.4);
+        // 停掉 X 动画拿回本地值，钉在旧句当前滚动位（DP getter 返回的是动画生效值）
+        Shift.BeginAnimation(TranslateTransform.XProperty, null);
+        Shift.X = x;
+        MainText.BeginAnimation(OpacityProperty, null);
+        MainText.Opacity = 1;
+    }
+
+    /// <summary>当前滚动位（X 动画进行中时返回动画生效值，供冻结旧块用）</summary>
+    public double CurrentShiftX => Shift.X;
+
+    private bool _suppressRelayout;
 
     /// <summary>上一句文本快照（Text 变更时抓取，仅供推挤过渡渲染 GhostText）</summary>
     private string? _lastText;
@@ -107,12 +131,14 @@ public partial class MarqueeTextBlock : UserControl
     }
 
     /// <summary>
-    /// 换句过渡（180ms，克制风格，QuadraticEase）：
+    /// 换句过渡（新句 180ms 入场 + 旧句 120ms 快退，QuadraticEase）：
     /// None=不动画；Fade=纯淡入；Slide=淡入+从下方 3px 上滑；
     /// Zoom=淡入+0.9→1 左中放大；Blur=淡入+模糊 8px→0 渐清晰；
     /// BlurZoom=模糊+缩放+淡入三合一（AMLL 复合签名效果）。
     /// Push=推挤：旧句整行推上淡出 + 新句整行从下方推入（400ms，
     /// cubic-bezier(0.4,0,0.2,1)，仿 SPlayer 任务栏歌词的 transition-group 行推挤）。
+    /// 旧句退场（非 Push 模式）= 快退慢进：120ms 淡出+3px 上浮（EaseIn 加速离场），
+    /// 与新句入场空间错开，避免同位置 alpha 叠加发糊（纯交叉淡化会"太软"）。
     /// 模糊走 BlurEffect 半径动画，完成后摘掉 Effect 恢复 ClearType 渲染。
     /// </summary>
     public void BeginTransition(LineTransition kind)
@@ -123,6 +149,33 @@ public partial class MarqueeTextBlock : UserControl
         {
             BeginPushTransition();
             return;
+        }
+
+        // 旧句快退（120ms 淡出+3px 上浮，前 1/3 结束）：修"旧行瞬间蒸发、
+        // 新行却有动画"的不对称（2026-08-26 Glenn 反馈）。首句/空行无退场。
+        if (!string.IsNullOrEmpty(_lastText))
+        {
+            GhostShift.BeginAnimation(TranslateTransform.YProperty, null);
+            GhostText.BeginAnimation(OpacityProperty, null);
+            GhostText.Text = _lastText;
+            GhostText.Visibility = Visibility.Visible;
+            GhostShift.X = Shift.X; // 与新句静止位水平对齐（同推挤的简化）
+            GhostShift.Y = 0;
+            var gEase = new QuadraticEase { EasingMode = EasingMode.EaseIn };
+            var gDur = TimeSpan.FromMilliseconds(120);
+            var gop = new DoubleAnimation(1, 0, gDur) { EasingFunction = gEase };
+            var gy = new DoubleAnimation(0, -3, gDur) { EasingFunction = gEase };
+            gop.Completed += (_, _) =>
+            {
+                GhostText.BeginAnimation(OpacityProperty, null);
+                GhostText.Opacity = 1;
+                GhostShift.BeginAnimation(TranslateTransform.YProperty, null);
+                GhostShift.Y = 0;
+                GhostText.Visibility = Visibility.Collapsed;
+                GhostText.Text = "";
+            };
+            GhostText.BeginAnimation(OpacityProperty, gop);
+            GhostShift.BeginAnimation(TranslateTransform.YProperty, gy);
         }
 
         var ease = new System.Windows.Media.Animation.QuadraticEase();

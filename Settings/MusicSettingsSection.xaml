@@ -73,10 +73,12 @@
                                      IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Blur, Mode=TwoWay}" Margin="0,0,12,6" />
                         <RadioButton GroupName="LineTransition" Content="模糊缩放"
                                      IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=BlurZoom, Mode=TwoWay}" Margin="0,0,12,6" />
-                        <RadioButton GroupName="LineTransition" Content="推挤"
-                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Push, Mode=TwoWay}" Margin="0,0,0,6" />
+                        <RadioButton GroupName="LineTransition" Content="推挤（单行）"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Push, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="推挤（双行）"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=PushPair, Mode=TwoWay}" Margin="0,0,0,6" />
                     </WrapPanel>
-                    <TextBlock Text="缩放/模糊为 AMLL 风格；推挤（旧句整行推上、新句推入）仿 SPlayer 任务栏歌词"
+                    <TextBlock Text="缩放/模糊为 AMLL 风格；推挤仿 SPlayer 任务栏歌词：单行=各行独立推，双行=两行整块推出/推入"
                                FontSize="12"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
