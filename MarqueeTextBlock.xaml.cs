@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 
 namespace TaskbarMusic;
 
@@ -75,9 +76,16 @@ public partial class MarqueeTextBlock : UserControl
     private static void OnContentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var m = (MarqueeTextBlock)d;
-        if (e.Property == TextProperty) m.MainText.Text = (string)e.NewValue;
+        if (e.Property == TextProperty)
+        {
+            m._lastText = m.MainText.Text; // 推挤过渡需要旧句（推上淡出的那一行）
+            m.MainText.Text = (string)e.NewValue;
+        }
         m.Relayout();
     }
+
+    /// <summary>上一句文本快照（Text 变更时抓取，仅供推挤过渡渲染 GhostText）</summary>
+    private string? _lastText;
 
     /// <summary>
     /// 预览模式（E 模式次行"下一句"用）：不滚动，超宽时句首左对齐、右侧截断。
@@ -99,15 +107,26 @@ public partial class MarqueeTextBlock : UserControl
     }
 
     /// <summary>
-    /// 换句过渡（150ms，克制风格）：
-    /// Fade=纯淡入；Slide=淡入+从下方 3px 上滑；None=不动画
+    /// 换句过渡（180ms，克制风格，QuadraticEase）：
+    /// None=不动画；Fade=纯淡入；Slide=淡入+从下方 3px 上滑；
+    /// Zoom=淡入+0.9→1 左中放大；Blur=淡入+模糊 8px→0 渐清晰；
+    /// BlurZoom=模糊+缩放+淡入三合一（AMLL 复合签名效果）。
+    /// Push=推挤：旧句整行推上淡出 + 新句整行从下方推入（400ms，
+    /// cubic-bezier(0.4,0,0.2,1)，仿 SPlayer 任务栏歌词的 transition-group 行推挤）。
+    /// 模糊走 BlurEffect 半径动画，完成后摘掉 Effect 恢复 ClearType 渲染。
     /// </summary>
     public void BeginTransition(LineTransition kind)
     {
         if (kind == LineTransition.None) return;
 
+        if (kind == LineTransition.Push)
+        {
+            BeginPushTransition();
+            return;
+        }
+
         var ease = new System.Windows.Media.Animation.QuadraticEase();
-        var dur = TimeSpan.FromMilliseconds(150);
+        var dur = TimeSpan.FromMilliseconds(180);
 
         var op = new DoubleAnimation(0, 1, dur) { EasingFunction = ease };
         MainText.BeginAnimation(OpacityProperty, op);
@@ -116,6 +135,78 @@ public partial class MarqueeTextBlock : UserControl
         {
             var sy = new DoubleAnimation(3, 0, dur) { EasingFunction = ease };
             Shift.BeginAnimation(TranslateTransform.YProperty, sy);
+        }
+
+        if (kind is LineTransition.Zoom or LineTransition.BlurZoom)
+        {
+            var sc = new DoubleAnimation(0.9, 1.0, dur) { EasingFunction = ease };
+            LineScale.BeginAnimation(ScaleTransform.ScaleXProperty, sc);
+            LineScale.BeginAnimation(ScaleTransform.ScaleYProperty, sc);
+        }
+
+        if (kind is LineTransition.Blur or LineTransition.BlurZoom)
+        {
+            // AMLL 语义：新句从模糊中渐清晰。Effect 会让文本走中间表面渲染（ClearType
+            // 临时降级为灰度 AA），180ms 极短可接受；完成后立即摘除恢复像素级清晰。
+            const double blurFrom = 8;
+            var blurFx = new BlurEffect { Radius = blurFrom };
+            MainText.Effect = blurFx;
+            var ba = new DoubleAnimation(blurFrom, 0, dur) { EasingFunction = ease };
+            ba.Completed += (_, _) =>
+            {
+                if (ReferenceEquals(MainText.Effect, blurFx))
+                    MainText.Effect = null;
+            };
+            blurFx.BeginAnimation(BlurEffect.RadiusProperty, ba);
+        }
+    }
+
+    /// <summary>
+    /// 推挤过渡（仿 SPlayer transition-group 行推挤）：
+    /// 旧句（GhostText）整行推上淡出，新句整行从行高下方推入淡显。
+    /// 400ms cubic-bezier(0.4,0,0.2,1)（CubicEase EaseInOut 近似）。
+    /// 旧句水平位置与 MainText 当前静止位对齐（换句滚动重置后的 X），400ms 内快速离场无感。
+    /// </summary>
+    private void BeginPushTransition()
+    {
+        const int durMs = 400;
+        var ease = new CubicEase { EasingMode = EasingMode.EaseInOut };
+        var dur = TimeSpan.FromMilliseconds(durMs);
+        double h = HostCanvas.Height;
+
+        // 清掉上一轮过渡可能残留的 Y 动画（动画值优先于本地值）
+        Shift.BeginAnimation(TranslateTransform.YProperty, null);
+        Shift.Y = h; // 新句从整行下方进来（超界部分由 ClipToBounds 裁掉）
+
+        var sy = new DoubleAnimation(h, 0, dur) { EasingFunction = ease };
+        var op = new DoubleAnimation(0, 1, dur) { EasingFunction = ease };
+        sy.Completed += (_, _) =>
+        {
+            Shift.BeginAnimation(TranslateTransform.YProperty, null);
+            Shift.Y = 0;
+        };
+        Shift.BeginAnimation(TranslateTransform.YProperty, sy);
+        MainText.BeginAnimation(OpacityProperty, op);
+
+        // 旧句推上淡出；无旧句（首句/空行）则只做新句入场
+        if (!string.IsNullOrEmpty(_lastText))
+        {
+            GhostText.Text = _lastText;
+            GhostText.Visibility = Visibility.Visible;
+            GhostShift.X = Shift.X; // 与新句静止位水平对齐
+            GhostShift.Y = 0;
+
+            var gy = new DoubleAnimation(0, -h, dur) { EasingFunction = ease };
+            var gop = new DoubleAnimation(1, 0, dur) { EasingFunction = ease };
+            gy.Completed += (_, _) =>
+            {
+                GhostText.BeginAnimation(OpacityProperty, null);
+                GhostShift.BeginAnimation(TranslateTransform.YProperty, null);
+                GhostText.Visibility = Visibility.Collapsed;
+                GhostText.Opacity = 1;
+            };
+            GhostShift.BeginAnimation(TranslateTransform.YProperty, gy);
+            GhostText.BeginAnimation(OpacityProperty, gop);
         }
     }
 

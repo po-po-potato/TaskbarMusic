@@ -18,9 +18,30 @@
                    FontFamily="{Binding FontFamily, ElementName=Root}"
                    FontSize="{Binding TextFontSize, ElementName=Root}"
                    FontWeight="{Binding TextFontWeight, ElementName=Root}"
-                   TextAlignment="Left" TextWrapping="NoWrap">
+                   TextAlignment="Left" TextWrapping="NoWrap"
+                   RenderTransformOrigin="0,0.5">
+            <!-- TransformGroup：Shift=滚动/上滑平移；LineScale=换句缩放（锚点左中，
+                 从行首生长，左对齐文本缩放不跳位；平移不受 RenderTransformOrigin 影响） -->
             <TextBlock.RenderTransform>
-                <TranslateTransform x:Name="Shift" X="0" Y="0" />
+                <TransformGroup>
+                    <TranslateTransform x:Name="Shift" X="0" Y="0" />
+                    <ScaleTransform x:Name="LineScale" ScaleX="1" ScaleY="1" />
+                </TransformGroup>
+            </TextBlock.RenderTransform>
+        </TextBlock>
+
+        <!-- 推挤过渡的旧句载体：换句瞬间显示上一句，整行推上淡出后隐藏。
+             绑定与 MainText 完全一致（同字号/字体/前景，保证宽度对齐）。 -->
+        <TextBlock x:Name="GhostText" Text="" Visibility="Collapsed"
+                   Canvas.Left="0" Canvas.Top="0"
+                   Foreground="{Binding Foreground, ElementName=Root}"
+                   FontFamily="{Binding FontFamily, ElementName=Root}"
+                   FontSize="{Binding TextFontSize, ElementName=Root}"
+                   FontWeight="{Binding TextFontWeight, ElementName=Root}"
+                   TextAlignment="Left" TextWrapping="NoWrap"
+                   IsHitTestVisible="False">
+            <TextBlock.RenderTransform>
+                <TranslateTransform x:Name="GhostShift" X="0" Y="0" />
             </TextBlock.RenderTransform>
         </TextBlock>
     </Canvas>

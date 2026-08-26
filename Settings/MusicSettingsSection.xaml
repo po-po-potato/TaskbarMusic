@@ -66,8 +66,19 @@
                         <RadioButton GroupName="LineTransition" Content="淡入"
                                      IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Fade, Mode=TwoWay}" Margin="0,0,12,6" />
                         <RadioButton GroupName="LineTransition" Content="上滑"
-                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Slide, Mode=TwoWay}" Margin="0,0,0,6" />
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Slide, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="缩放"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Zoom, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="模糊"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Blur, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="模糊缩放"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=BlurZoom, Mode=TwoWay}" Margin="0,0,12,6" />
+                        <RadioButton GroupName="LineTransition" Content="推挤"
+                                     IsChecked="{Binding LineTransition, Converter={StaticResource EnumToBool}, ConverterParameter=Push, Mode=TwoWay}" Margin="0,0,0,6" />
                     </WrapPanel>
+                    <TextBlock Text="缩放/模糊为 AMLL 风格；推挤（旧句整行推上、新句推入）仿 SPlayer 任务栏歌词"
+                               FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </ui:Card>
 

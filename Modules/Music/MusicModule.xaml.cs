@@ -701,7 +701,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
         line.Text = t; // 触发 OnContentChanged → Relayout 静止兜底（句尾顶右/预览左截断）
 
         if (textChanged && _config.LyricMode != LyricDisplayMode.Follow)
-            line.BeginTransition(_config.LineTransition); // C11：无/淡入/上滑
+            line.BeginTransition(_config.LineTransition); // C11：硬切/淡入/上滑/缩放/模糊/模糊缩放
 
         if (lyricWindowSec is > 0.5)
             line.StartLine(lyricElapsedSec, lyricWindowSec.Value);

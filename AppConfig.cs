@@ -26,7 +26,8 @@ public enum LyricDisplayMode
     Follow = 4,
 }
 
-/// <summary>换句过渡效果（行级；E 模式的垂直滚动是模式自带过渡，不在此列）</summary>
+/// <summary>换句过渡效果（行级；双行模式的垂直滚动是模式自带过渡，不在此列）
+/// 2026-08-26 扩展：仿 applemusic-like-lyrics（AMLL）加 缩放/模糊/模糊缩放</summary>
 public enum LineTransition
 {
     /// <summary>硬切（V1 原行为）</summary>
@@ -37,6 +38,18 @@ public enum LineTransition
 
     /// <summary>上滑：150ms 淡入 + 从下方 3px 滑入</summary>
     Slide = 2,
+
+    /// <summary>缩放：淡入 + 0.9→1 从左中放大（AMLL 当前行放大语义）</summary>
+    Zoom = 3,
+
+    /// <summary>模糊：淡入 + BlurEffect 8px→0 渐清晰（AMLL 非焦点行模糊语义）</summary>
+    Blur = 4,
+
+    /// <summary>模糊缩放：模糊+缩放+淡入三合一（AMLL 换句复合签名效果）</summary>
+    BlurZoom = 5,
+
+    /// <summary>推挤：旧句整行推上淡出 + 新句整行从下方推入（400ms，仿 SPlayer 任务栏歌词）</summary>
+    Push = 6,
 }
 
 /// <summary>设置窗背景材质（Win11 22H2+ DWM backdrop；切换后重开设置窗生效）</summary>
