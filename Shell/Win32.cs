@@ -87,4 +87,10 @@ internal static class Win32
     /// margins 全 -1 = 整窗扩展（sheet of glass）。</summary>
     [DllImport("dwmapi.dll")]
     internal static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref MARGINS margins);
+
+    // ===== RDP 会话检测（材质降级用）=====
+    [DllImport("user32.dll")]
+    internal static extern int GetSystemMetrics(int nIndex);
+    /// <summary>SM_REMOTESESSION：非 0 = 当前处于远程桌面会话（DWM 禁透明效果）</summary>
+    internal const int SM_REMOTESESSION = 0x1000;
 }

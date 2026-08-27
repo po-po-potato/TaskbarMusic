@@ -24,6 +24,11 @@ public partial class ShellSettingsSection : UserControl
         _vm.BackdropChanged += () => shell.ReopenSettings();
         // 字体变更：刷新条上文字（设置窗跟随由 SettingsWindow 监听同一事件）
         _vm.FontChanged += shell.RefreshModulesTextStyle;
+
+        // 环境不支持材质（透明效果关闭/RDP）时提示降级（分区常驻复用，
+        // 开关系统透明后重开设置窗即刷新）
+        if (!ThemeService.IsBackdropAvailable())
+            BackdropEnvHint.Visibility = Visibility.Visible;
     }
 
     /// <summary>壳分区 VM（设置窗字体跟随渲染订阅用）</summary>

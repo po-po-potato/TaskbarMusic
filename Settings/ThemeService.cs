@@ -32,7 +32,42 @@ public static class ThemeService
         var theme = systemTheme == SystemTheme.Dark
             ? ApplicationTheme.Dark
             : ApplicationTheme.Light;
+
+        // 【Wpf.Ui 隐藏副作用防护】Apply(theme, None) 内部对 MainWindow（= 任务栏条）
+        // 执行 WindowBackgroundManager.UpdateBackground(…, None) → RemoveBackdrop →
+        // RestoreContentBackground：把条 Background=Transparent 改成主题纯色画刷
+        // （Light≈#FAFAFA）、CompositionTarget.BackgroundColor 改成 SystemColors.WindowColor。
+        // 条是 AllowsTransparency 分层窗口——背景一变不透明，模块渐变右侧 alpha=0
+        // 透出白窗底而非任务栏（2026-08-27 他机"开设置窗后条渐变变白"实锤）。
+        // 启动时 MainWindow 未创建（null）不中招，设置窗构造/主题切换 hook 再调就中招。
+        // Apply 前抓条背景快照，Apply 后还原。
+        var shell = Application.Current.MainWindow;
+        System.Windows.Media.Brush? savedBackground = null;
+        System.Windows.Interop.HwndTarget? compositionTarget = null;
+        var savedCompositionColor = System.Windows.Media.Colors.White;
+        if (shell is TaskbarShell)
+        {
+            savedBackground = shell.Background;
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(shell).Handle;
+            compositionTarget = hwnd != System.IntPtr.Zero
+                ? System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.CompositionTarget
+                : null;
+            if (compositionTarget != null)
+                savedCompositionColor = compositionTarget.BackgroundColor;
+        }
+
         ApplicationThemeManager.Apply(theme, Wpf.Ui.Controls.WindowBackdropType.None);
+
+        if (shell is TaskbarShell)
+        {
+            shell.Background = savedBackground ?? System.Windows.Media.Brushes.Transparent;
+            if (compositionTarget != null)
+                compositionTarget.BackgroundColor = savedCompositionColor;
+            var restored = shell.Background as System.Windows.Media.SolidColorBrush;
+            MediaService.Trace(
+                $"theme apply: shell backdrop side-effect guarded " +
+                $"(bg={restored?.Color.ToString() ?? shell.Background.GetType().Name}, theme={theme})");
+        }
         return theme;
     }
 
@@ -43,6 +78,39 @@ public static class ThemeService
         WindowBackdrop.Acrylic => Wpf.Ui.Controls.WindowBackdropType.Acrylic,
         _ => Wpf.Ui.Controls.WindowBackdropType.None,
     };
+
+    /// <summary>
+    /// 系统"透明效果"是否开启（HKCU\...\Themes\Personalize\EnableTransparency）。
+    /// 关闭时 DWM 不绘制 DWMWA_SYSTEMBACKDROP_TYPE 的 backdrop，而 Wpf.Ui 在应用
+    /// 材质前已把 WPF 窗口背景清成 Transparent（RemoveBackground）→ 窗口整片露白
+    /// （2026-08-27 他机 25H2 实锤：选 Mica/Acrylic 后白色不透明且切换无效）。
+    /// 键不存在按开启兜底。RDP 会话同理禁透明（TerminalServerSession）。
+    /// </summary>
+    public static bool IsSystemTransparencyEnabled()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("EnableTransparency") is int v)
+                return v != 0;
+            return true;
+        }
+        catch { return true; }
+    }
+
+    /// <summary>backdrop 当前环境是否可用：系统透明开启 + 非远程桌面会话</summary>
+    public static bool IsBackdropAvailable() =>
+        IsSystemTransparencyEnabled()
+        && Win32.GetSystemMetrics(Win32.SM_REMOTESESSION) == 0;
+
+    /// <summary>
+    /// config 材质 → 实际生效的 backdrop：环境不支持（透明关闭/RDP）时降级 None。
+    /// None 路径走 FluentWindow.OnBackdropTypeChanged → RemoveBackdrop →
+    /// RestoreContentBackground，恢复主题纯色背景（而不是 Transparent 露白）。
+    /// </summary>
+    public static Wpf.Ui.Controls.WindowBackdropType MapBackdropSafe(WindowBackdrop backdrop) =>
+        IsBackdropAvailable() ? MapBackdrop(backdrop) : Wpf.Ui.Controls.WindowBackdropType.None;
 
     /// <summary>
     /// 同步 DWM 层深浅（DWMWA_USE_IMMERSIVE_DARK_MODE）：Mica/Acrylic 由 DWM 绘制，

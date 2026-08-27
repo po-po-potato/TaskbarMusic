@@ -32,6 +32,13 @@ public partial class SettingsWindow : FluentWindow
     /// OnSourceInitialized 喂给 DWM 层用）</summary>
     private Wpf.Ui.Appearance.ApplicationTheme _theme;
 
+    /// <summary>配置里的材质（用户选择）；实际生效值看 WindowBackdropType，
+    /// 环境不支持时被 Safe 映射降级为 None</summary>
+    private WindowBackdrop _configBackdrop;
+
+    /// <summary>上次采样到的系统透明效果开关（WM_SETTINGCHANGE 跟随用）</summary>
+    private bool _transparencyOn = true;
+
     public SettingsWindow(TaskbarShell shell, ModuleHost host)
     {
         InitializeComponent();
@@ -39,10 +46,13 @@ public partial class SettingsWindow : FluentWindow
 
         // 主题单点（ThemeService）：窗级深浅色跟随系统 + 喂 TitleBar 前景色，
         // 材质映射到内建 backdrop；_theme 留给 OnSourceInitialized 喂 DWM 层
-        // （App.OnStartup 已提前应用过一次，此处幂等重应用确保新会话正确）
+        // （App.OnStartup 已提前应用过一次，此处幂等重应用确保新会话正确）。
+        // 材质用 Safe 版：系统透明关闭/RDP 下 DWM 不画 backdrop 而 Wpf.Ui 已清
+        // WPF 背景 → 整窗露白（2026-08-27 他机实锤），降级 None 走纯色恢复路径
         _theme = ThemeService.ApplySystemTheme();
         RootTitleBar.ApplicationTheme = _theme;
-        WindowBackdropType = ThemeService.MapBackdrop(_config.WindowBackdrop);
+        _configBackdrop = _config.WindowBackdrop;
+        WindowBackdropType = ThemeService.MapBackdropSafe(_configBackdrop);
 
         // 宽高记忆：恢复用户上次拖动后的尺寸（XAML 默认 800x560 只是无配置时的兜底）
         if (_config.SettingsWindowWidth >= MinWidth)
@@ -154,6 +164,13 @@ public partial class SettingsWindow : FluentWindow
         base.OnSourceInitialized(e);
         ThemeService.ApplyDarkModeAttribute(this, _theme);
 
+        // 远程诊断：环境 + 材质决策落 trace.log（他机问题排查用，本机无害）
+        _transparencyOn = ThemeService.IsSystemTransparencyEnabled();
+        MediaService.Trace(
+            $"settings backdrop: config={_configBackdrop} effective={WindowBackdropType} " +
+            $"transparency={_transparencyOn} rdp={Win32.GetSystemMetrics(Win32.SM_REMOTESESSION) != 0} " +
+            $"build={Environment.OSVersion.Version} theme={_theme}");
+
         // 系统深浅色实时跟随：hook WM_SETTINGCHANGE(ImmersiveColorSet)
         // （与 Wpf.Ui SystemThemeWatcher 同款消息，但自主控制——Watcher 会强制
         // UpdateBackground 覆盖用户选的材质，不用）
@@ -169,18 +186,29 @@ public partial class SettingsWindow : FluentWindow
     /// （移除旧 backdrop → 清窗口背景 → 按当前材质重应用 → dark mode →
     /// 清标题栏背景）——缺它会出现：纯色模式顶栏/左栏残留旧主题色、
     /// 亚克力模式 backdrop 丢失变纯色（2026-08-26 实锤，重新切材质才能恢复）。
-    /// 传当前 WindowBackdropType 属性值——材质是用户选择，主题切换不改变它</summary>
+    /// 传当前 WindowBackdropType 属性值——材质是用户选择，主题切换不改变它。
+    /// 顺带跟随"透明效果"开关：切换时按新环境重映射材质（关闭→降级纯色防露白，
+    /// 开启→恢复用户所选材质）</summary>
     private System.IntPtr ThemeChangeWndProc(System.IntPtr hwnd, int msg,
         System.IntPtr wParam, System.IntPtr lParam, ref bool handled)
     {
         const int WM_SETTINGCHANGE = 0x001A;
-        if (msg == WM_SETTINGCHANGE && lParam != System.IntPtr.Zero
-            && System.Runtime.InteropServices.Marshal.PtrToStringUni(lParam) == "ImmersiveColorSet")
+        if (msg == WM_SETTINGCHANGE && lParam != System.IntPtr.Zero)
         {
-            _theme = ThemeService.ApplySystemTheme();
-            RootTitleBar.ApplicationTheme = _theme;
-            Wpf.Ui.Appearance.WindowBackgroundManager.UpdateBackground(
-                this, _theme, WindowBackdropType);
+            var what = System.Runtime.InteropServices.Marshal.PtrToStringUni(lParam);
+            if (what == "ImmersiveColorSet")
+            {
+                _theme = ThemeService.ApplySystemTheme();
+                RootTitleBar.ApplicationTheme = _theme;
+                Wpf.Ui.Appearance.WindowBackgroundManager.UpdateBackground(
+                    this, _theme, WindowBackdropType);
+            }
+            else if (what == "Personalize\\Transparency"
+                && ThemeService.IsSystemTransparencyEnabled() != _transparencyOn)
+            {
+                _transparencyOn = ThemeService.IsSystemTransparencyEnabled();
+                WindowBackdropType = ThemeService.MapBackdropSafe(_configBackdrop);
+            }
         }
         return System.IntPtr.Zero;
     }

@@ -41,6 +41,9 @@
                 <TextBlock Text="Mica/Acrylic 需 Win11 22H2+；切换后设置窗自动重开生效"
                            FontSize="12" TextWrapping="Wrap"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="BackdropEnvHint" Text="当前环境不支持材质（系统透明效果已关闭或远程桌面会话），已降级纯色背景" Visibility="Collapsed"
+                           FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <WrapPanel Margin="0,8,0,0">
                     <RadioButton GroupName="WindowBackdrop" Content="纯色"
                                  IsChecked="{Binding WindowBackdrop, Converter={StaticResource EnumToBool}, ConverterParameter=None, Mode=TwoWay}" Margin="0,0,12,6" />
