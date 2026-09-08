@@ -32,8 +32,9 @@
              关闭后干扰同进程窗口渲染，导致从右键条开的设置窗 resize 卡；WinForms
              菜单独立于 WPF 渲染/事件体系，托盘走它一直不卡。见 TaskbarShell.BuildContextMenu。 -->
 
-        <!-- 模块区域：V1 单模块需占满整条 → Grid（子元素默认 Stretch）；
-             M2 起换 E6 槽位容器（ItemsControl + 横向模板） -->
+        <!-- 模块区域：E6 槽位容器——Grid 列由 ModuleHost 按槽位状态管理
+             （展开槽位 = * 等分，折叠槽位 = Auto 图标位）；单模块启用时
+             唯一 * 列占满整条，与 V1 行为一致 -->
         <Grid x:Name="ModulePanel" />
 
         <!-- 左右隐形宽度调节手柄（最上层，位于模块之上） -->

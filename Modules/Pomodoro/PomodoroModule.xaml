@@ -1,0 +1,33 @@
+<UserControl x:Class="TaskbarMusic.PomodoroModule"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- F2 番茄钟/倒计时模块（M2 E6 首个真实第二模块，PRD 4.3 F2.1/F2.2/F2.5 第一版）。
+         布局：阶段圆点 + 等宽倒计时（Consolas，数字变化不跳宽）+ 阶段/计数两行小字。
+         交互区 = 居中 HitArea（单击启停/双击重置/右键菜单）；左右空白区点击
+         冒泡到壳（可拖动条），与音乐模块"非交互区拖拽"语义一致。
+         到点闪烁用 overlay 层（不动画根背景——分层子窗口里背景动画重渲成本高）。 -->
+    <Grid x:Name="ModuleRoot" Background="#E6202030">
+
+        <!-- 到点闪烁层：工作完成闪绿 / 休息·倒计时结束闪橙 -->
+        <Grid x:Name="FlashOverlay" Background="#3DDC84" Opacity="0" IsHitTestVisible="False" />
+
+        <!-- 交互区（Background=Transparent 才能收 hit-test） -->
+        <StackPanel x:Name="HitArea" Orientation="Horizontal"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="Transparent"
+                    MouseLeftButtonDown="HitArea_MouseLeftButtonDown"
+                    MouseRightButtonUp="HitArea_MouseRightButtonUp">
+            <Ellipse x:Name="PhaseDot" Width="10" Height="10" Fill="#9E9E9E" Margin="12,0,0,0" />
+            <TextBlock x:Name="TimeText" Text="25:00" FontFamily="Consolas"
+                       FontSize="20" FontWeight="SemiBold" Foreground="White"
+                       Margin="10,0,10,0" />
+            <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                <TextBlock x:Name="PhaseText" Text="待命" FontSize="11"
+                           Foreground="#CCFFFFFF" />
+                <TextBlock x:Name="CountText" Text="今日 0" FontSize="11"
+                           Foreground="#80FFFFFF" Margin="0,1,0,0" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>

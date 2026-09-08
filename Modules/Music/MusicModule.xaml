@@ -3,35 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:TaskbarMusic">
 
-    <UserControl.Resources>
-        <!-- 播控按钮：默认全透明，鼠标 hover 才显（Opacity 由代码控制）-->
-        <Style x:Key="IconBtn" TargetType="Button">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="White" />
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets" />
-            <Setter Property="FontSize" Value="14" />
-            <Setter Property="Width" Value="28" />
-            <Setter Property="Height" Value="28" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Cursor" Value="Hand" />
-            <Setter Property="Focusable" Value="False" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Grid Background="Transparent">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Foreground" Value="#FFEFEFEF" />
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-    </UserControl.Resources>
+    <!-- 播控按钮样式 IconBtn 已上移 App.xaml（单一真源）：模块折叠图标（ModuleHost
+         槽位）与播控三键共用，StaticResource 沿元素树上溯 App 级解析 -->
 
     <!-- 模块根：背景由 ApplyBackground 动态设置（黑底 / 封面取色 + 右侧渐变）-->
     <Grid x:Name="ModuleRoot">

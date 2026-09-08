@@ -50,6 +50,12 @@ public class MediaService
 {
     public event Action<MediaInfo>? MediaChanged;
 
+    /// <summary>
+    /// 全量诊断广播（SMTC 监视窗订阅）：每条 trace 行原样外发。
+    /// 注意：触发线程不固定（SMTC 回调在 WinRT 线程池），订阅方自行 Dispatcher 编组。
+    /// </summary>
+    public static event Action<string>? TraceBroadcast;
+
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private GlobalSystemMediaTransportControlsSession? _currentSession;
     private MediaInfo _last = new();
@@ -89,10 +95,16 @@ public class MediaService
             }
         }
         catch { /* 诊断日志失败不影响功能 */ }
+
+        // 广播给 SMTC 监视窗（独立于文件写——文件轮转/占用失败不影响窗内实时流）
+        TraceBroadcast?.Invoke(line);
     }
 
     /// <summary>主窗口可访问最近一次推送的快照（用来推算实时进度）</summary>
     public MediaInfo Current => _last;
+
+    /// <summary>SMTC 会话管理器（SMTC 监视窗枚举全部会话用；启动完成前为 null）</summary>
+    internal GlobalSystemMediaTransportControlsSessionManager? Manager => _manager;
 
     /// <summary>
     /// 暂停淡出补偿（秒），由 MainWindow 从配置注入：
@@ -197,17 +209,28 @@ public class MediaService
             _currentSession.TimelinePropertiesChanged += OnTimelinePropertiesChanged;
         }
 
+        Trace($"[SESSION] current aumid='{_currentSession?.SourceAppUserModelId}'");
         _ = PushCurrentAsync();
     }
 
     private void OnMediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
-        => _ = PushCurrentAsync();
+    {
+        // 原始事件留痕（监视窗/排查用）：SMTC 每次媒体属性上报都记录来源与类型
+        Trace($"[EVT] media-props aumid='{sender.SourceAppUserModelId}'");
+        _ = PushCurrentAsync();
+    }
 
     private void OnPlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
-        => _ = PushCurrentAsync();
+    {
+        Trace($"[EVT] playback-info aumid='{sender.SourceAppUserModelId}'");
+        _ = PushCurrentAsync();
+    }
 
     private void OnTimelinePropertiesChanged(GlobalSystemMediaTransportControlsSession sender, TimelinePropertiesChangedEventArgs args)
-        => _ = PushCurrentAsync();
+    {
+        Trace($"[EVT] timeline aumid='{sender.SourceAppUserModelId}'");
+        _ = PushCurrentAsync();
+    }
 
     private async Task PushCurrentAsync()
     {

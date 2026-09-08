@@ -15,7 +15,7 @@ public partial class ShellSettingsSection : UserControl
     public ShellSettingsSection(TaskbarShell shell)
     {
         InitializeComponent();
-        _vm = new ShellSettingsViewModel(shell.Config);
+        _vm = new ShellSettingsViewModel(shell.Config, shell.Host);
         DataContext = _vm;
 
         _vm.ResetPositionRequested += shell.ResetPosition;

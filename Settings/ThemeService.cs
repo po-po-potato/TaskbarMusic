@@ -16,22 +16,31 @@ namespace TaskbarMusic;
 public static class ThemeService
 {
     /// <summary>
-    /// 按系统当前主题应用 Wpf.Ui 主题（深/浅），返回应用的主题值。
+    /// 颜色模式 → 实际 Wpf.Ui 主题：跟随系统读系统深浅（高对比度按浅色），
+    /// 固定模式直接取值（系统切换不影响）。
+    /// </summary>
+    public static ApplicationTheme ResolveTheme(AppThemeMode mode) => mode switch
+    {
+        AppThemeMode.Light => ApplicationTheme.Light,
+        AppThemeMode.Dark => ApplicationTheme.Dark,
+        _ => ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark
+            ? ApplicationTheme.Dark
+            : ApplicationTheme.Light,
+    };
+
+    /// <summary>
+    /// 按颜色模式应用 Wpf.Ui 主题（深/浅），返回应用的主题值。
     /// 必须用官方 ApplicationThemeManager.Apply（Source URI 替换 + 缓存 + Changed 事件），
     /// 手动改 ThemesDictionary.Theme 属性不可靠——字典内容不更新，窗口停留在 Light
     /// （2026-08-26 纯色变白实锤）。
     /// backdrop 参数必须显式 None：Apply 默认 Mica 且作用于 MainWindow（= 任务栏条），
     /// 会给条套背景效果。
     /// 调用时机：App.OnStartup（窗口创建前，DynamicResource 首次解析即正确值）
-    /// + 设置窗打开时 + 系统主题变化 hook 触发时。幂等。
-    /// 高对比度按浅色处理。
+    /// + 设置窗打开时 + 系统主题变化 hook 触发时（仅跟随系统模式）。幂等。
     /// </summary>
-    public static ApplicationTheme ApplySystemTheme()
+    public static ApplicationTheme ApplyTheme(AppThemeMode mode)
     {
-        var systemTheme = ApplicationThemeManager.GetSystemTheme();
-        var theme = systemTheme == SystemTheme.Dark
-            ? ApplicationTheme.Dark
-            : ApplicationTheme.Light;
+        var theme = ResolveTheme(mode);
 
         // 【Wpf.Ui 隐藏副作用防护】Apply(theme, None) 内部对 MainWindow（= 任务栏条）
         // 执行 WindowBackgroundManager.UpdateBackground(…, None) → RemoveBackdrop →

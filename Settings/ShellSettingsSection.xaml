@@ -31,9 +31,59 @@
             </Grid>
         </ui:Card>
 
+        <!-- ===== 模块（E6 单屏轮播）：条上滚轮切换显示对象，一次只显示一个 ===== -->
+        <TextBlock Text="模块" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <ItemsControl ItemsSource="{Binding ModuleRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <!-- 排序：MDL2 细线 chevron，与条上按钮图标风格一致 -->
+                                <Button Grid.Column="0" Command="{Binding MoveUpCommand}" ToolTip="轮播顺序前移"
+                                        Width="26" Height="24" Margin="0,0,2,0" Padding="0"
+                                        FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE70E;" />
+                                <Button Grid.Column="1" Command="{Binding MoveDownCommand}" ToolTip="轮播顺序后移"
+                                        Width="26" Height="24" Margin="0,0,10,0" Padding="0"
+                                        FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE70D;" />
+                                <TextBlock Grid.Column="2" Text="{Binding Name}" VerticalAlignment="Center" />
+                                <CheckBox Grid.Column="3" Content="启用" IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                          VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Text="条是一块固定宽度的小显示屏：同时只显示一个模块，鼠标在条上滚动切换（上=前一个，下=后一个）；↑↓ 调整轮播顺序；取消勾选停用模块（服务停止）"
+                           FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
         <!-- ===== 个性化 ===== -->
         <TextBlock Text="个性化" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="颜色" />
+                <WrapPanel Margin="0,8,0,0">
+                    <RadioButton GroupName="AppTheme" Content="深色"
+                                 IsChecked="{Binding AppTheme, Converter={StaticResource EnumToBool}, ConverterParameter=Dark, Mode=TwoWay}" Margin="0,0,12,6" />
+                    <RadioButton GroupName="AppTheme" Content="浅色"
+                                 IsChecked="{Binding AppTheme, Converter={StaticResource EnumToBool}, ConverterParameter=Light, Mode=TwoWay}" Margin="0,0,12,6" />
+                    <RadioButton GroupName="AppTheme" Content="跟随系统"
+                                 IsChecked="{Binding AppTheme, Converter={StaticResource EnumToBool}, ConverterParameter=System, Mode=TwoWay}" Margin="0,0,0,6" />
+                </WrapPanel>
+            </StackPanel>
+        </ui:Card>
 
         <ui:Card Margin="0,0,0,8">
             <StackPanel>

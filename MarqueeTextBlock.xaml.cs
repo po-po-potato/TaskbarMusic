@@ -73,6 +73,21 @@ public partial class MarqueeTextBlock : UserControl
         set => SetValue(TextFontWeightProperty, value);
     }
 
+    /// <summary>
+    /// 滚动总开关（默认 true）。false = 内容完全静止：不超宽左对齐，超宽右侧截断，
+    /// 不做三段式/单程滚动——用于视频标题等无歌词内容（2026-09-08）。
+    /// 歌词/歌名行保持 true（长句滚动是核心体验）。
+    /// </summary>
+    public static readonly DependencyProperty ScrollEnabledProperty =
+        DependencyProperty.Register(nameof(ScrollEnabled), typeof(bool), typeof(MarqueeTextBlock),
+            new PropertyMetadata(true));
+
+    public bool ScrollEnabled
+    {
+        get => (bool)GetValue(ScrollEnabledProperty);
+        set => SetValue(ScrollEnabledProperty, value);
+    }
+
     private static void OnContentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         var m = (MarqueeTextBlock)d;
@@ -303,6 +318,14 @@ public partial class MarqueeTextBlock : UserControl
             return;
         }
 
+        // 禁滚模式（浏览器视频标题等）：完全静止，句首左对齐（超宽右侧截断）
+        if (!ScrollEnabled)
+        {
+            Shift.BeginAnimation(TranslateTransform.XProperty, null);
+            Shift.X = 0;
+            return;
+        }
+
         // 停旧动画，拿回本地值控制权
         Shift.BeginAnimation(TranslateTransform.XProperty, null);
 
@@ -388,7 +411,7 @@ public partial class MarqueeTextBlock : UserControl
         double overflow = textWidth - viewport;
 
         // 超宽：普通模式句尾顶右边缘静止（左侧超出被 ClipToBounds 裁掉）；
-        // 预览模式句首左对齐（右侧截断）；否则句首左对齐
-        Shift.X = (overflow > 0.5 && viewport > 1 && !PreviewMode) ? -overflow : 0;
+        // 预览/禁滚模式句首左对齐（右侧截断）；否则句首左对齐
+        Shift.X = (overflow > 0.5 && viewport > 1 && !PreviewMode && ScrollEnabled) ? -overflow : 0;
     }
 }

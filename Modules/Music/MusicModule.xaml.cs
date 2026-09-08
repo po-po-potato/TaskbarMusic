@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -21,6 +23,9 @@ public partial class MusicModule : UserControl, ITaskbarModule
     private readonly DispatcherTimer _lyricTimer;
     private readonly AppConfig _config;
     private MediaService? _media;
+
+    /// <summary>媒体服务实例（SMTC 监视窗枚举会话用）</summary>
+    internal MediaService? Media => _media;
     private readonly LyricService _lyricService = new();
     private List<LrcParser.LrcLine> _currentLyric = new();
     private List<LrcParser.LrcLine> _currentTranslation = new();
@@ -30,6 +35,17 @@ public partial class MusicModule : UserControl, ITaskbarModule
     private string _currentArtistFallback = "";
     private string _currentTitleFallback = "";
     private LyricDisplayMode _lastRenderedMode = (LyricDisplayMode)(-1);
+
+    // 视频类会话（SMTC 无 Artist 字段，如浏览器网页视频）：只显示标题不搜词，
+    // 且文本完全静止不滚动。判定看内容不看来源——浏览器播歌（有 Artist）
+    // 仍是完整歌词体验（2026-09-08 Glenn 需求）
+    private bool _isVideoSession;
+
+    /// <summary>
+    /// 歌曲类会话判定（单一真源，监视窗徽章复用）：
+    /// SMTC 上报了 Artist 即视为歌曲（搜词+滚动）；无 Artist 视为视频类（仅标题）。
+    /// </summary>
+    internal static bool IsSongLike(string? artist) => !string.IsNullOrWhiteSpace(artist);
 
     // ===== 行槽位：布局无关的内容载体（XAML 控件名 TitleMarquee/ArtistMarquee 只是物理名）=====
     private readonly MarqueeTextBlock[] _lines;
@@ -95,6 +111,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
         ApplyBackground(null);
         ApplyTextStyle();
 
+        _mediaRetryActive = true;
         _media = new MediaService
         {
             PauseFadeOutSec = _config.PauseFadeOutSec
@@ -106,6 +123,10 @@ public partial class MusicModule : UserControl, ITaskbarModule
         _lyricTimer.Start();
     }
 
+    /// <summary>SMTC 重试循环运行标志：OnDetach 置 false 让循环退出
+    /// （E6 禁用态会走 OnDetach，重试循环不能在模块卸载后继续空转）</summary>
+    private volatile bool _mediaRetryActive;
+
     /// <summary>
     /// SMTC 启动防御（"连歌词都不显示"，实锤 42712 实例
     /// 活着但 6 分钟零 trace 记录 = 会话从未连上）：
@@ -116,7 +137,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
     /// </summary>
     private async System.Threading.Tasks.Task StartMediaWithRetryAsync()
     {
-        for (int attempt = 1; ; attempt++)
+        for (int attempt = 1; _mediaRetryActive; attempt++)
         {
             try
             {
@@ -145,6 +166,14 @@ public partial class MusicModule : UserControl, ITaskbarModule
         {
             _shell.BarDoubleClick -= OpenSourceApp;
             _shell = null;
+        }
+        _mediaRetryActive = false;
+        // E6 禁用态：模块 View 已隐藏/移除，媒体事件必须退订——
+        // 否则 SMTC 事件继续驱动隐藏视图的歌词渲染（空转 + 抢 UI 线程）
+        if (_media != null)
+        {
+            _media.MediaChanged -= OnMediaChanged;
+            _media = null;
         }
         _lyricTimer.Stop();
     }
@@ -201,6 +230,9 @@ public partial class MusicModule : UserControl, ITaskbarModule
     }
 
     // ===== 双击拉起源程序（壳路由的 BarDoubleClick）=====
+    // 按 SMTC SourceAppUserModelId 形态分流。原先一律 explorer shell:AppsFolder\{aumid}，
+    // 但 Win32 程序常把进程名当 AUMID（如实锤的 cloudmusic.exe）——AppsFolder 解析
+    // 不了时 explorer 会静默回退打开默认文件夹（文档），即"双击条打开文档"的根因。
     private void OpenSourceApp()
     {
         var aumid = _media?.Current.SourceApp ?? "";
@@ -208,18 +240,127 @@ public partial class MusicModule : UserControl, ITaskbarModule
 
         try
         {
-            var psi = new System.Diagnostics.ProcessStartInfo
+            // 形态1：包应用 AUMID（含"!"，如 xxx.yyy!App）→ AppsFolder 注册项，解析可靠
+            if (aumid.Contains('!'))
             {
-                FileName = "explorer.exe",
-                Arguments = $"shell:AppsFolder\\{aumid}",
-                UseShellExecute = false
-            };
-            System.Diagnostics.Process.Start(psi);
+                MediaService.Trace($"[DBLCLK] aumid='{aumid}' → apps-folder");
+                Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"shell:AppsFolder\\{aumid}",
+                    UseShellExecute = false
+                });
+                return;
+            }
+
+            // 形态2：Win32 进程名（如 cloudmusic.exe）→ 程序正在播放必然在运行，聚焦主窗口
+            var exeName = System.IO.Path.GetFileName(aumid).ToLowerInvariant();
+            if (exeName.EndsWith(".exe"))
+            {
+                var proc = System.Diagnostics.Process.GetProcessesByName(
+                        System.IO.Path.GetFileNameWithoutExtension(exeName))
+                    .FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
+                if (proc != null)
+                {
+                    MediaService.Trace($"[DBLCLK] aumid='{aumid}' → focus-window pid={proc.Id}");
+                    ActivateWindow(proc.MainWindowHandle);
+                    return;
+                }
+                // 带完整路径且存在 → 直接启动
+                if (System.IO.Path.IsPathRooted(aumid) && System.IO.File.Exists(aumid))
+                {
+                    MediaService.Trace($"[DBLCLK] aumid='{aumid}' → launch-path");
+                    Process.Start(new System.Diagnostics.ProcessStartInfo(aumid) { UseShellExecute = true });
+                    return;
+                }
+                MediaService.Trace($"[DBLCLK] aumid='{aumid}' → no-running-window");
+                return;
+            }
+
+            // 形态3：注册过的 Win32 AUMID（如 MSEdge）→ 先验证 AppsFolder 能解析再放行，
+            // 避免 explorer 静默回退打开文档
+            if (ShellItemExists($"shell:AppsFolder\\{aumid}"))
+            {
+                MediaService.Trace($"[DBLCLK] aumid='{aumid}' → apps-folder");
+                Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"shell:AppsFolder\\{aumid}",
+                    UseShellExecute = false
+                });
+            }
+            else
+            {
+                MediaService.Trace($"[DBLCLK] aumid='{aumid}' → unresolvable-aumid, no-op");
+            }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            MediaService.Trace($"[DBLCLK] aumid='{aumid}' → error: {ex.Message}");
+        }
     }
 
+    // 聚焦已有窗口（最小化则还原）
+    private static void ActivateWindow(IntPtr hwnd)
+    {
+        if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+    }
+
+    private const int SW_RESTORE = 9;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsIconic(IntPtr hWnd);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    /// <summary>shell 命名空间项是否存在（SHParseDisplayName，失败即不存在）</summary>
+    private static bool ShellItemExists(string parsingName)
+    {
+        try
+        {
+            var hr = SHParseDisplayName(parsingName, IntPtr.Zero, out var pidl, 0, out _);
+            if (hr != 0 || pidl == IntPtr.Zero) return false;
+            System.Runtime.InteropServices.Marshal.FreeCoTaskMem(pidl);
+            return true;
+        }
+        catch { return false; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern int SHParseDisplayName(
+        [System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.LPWStr)] string pszName,
+        IntPtr pbc, out IntPtr ppidl, uint sfgaoIn, out uint psfgaoOut);
+
     // ===== SMTC 回调 =====
+
+    // 浏览器 AUMID 黑名单（小写子串匹配）：仅用于 SMTC 监视窗的来源标识徽章。
+    // 歌词过滤已改按内容判定（有无 Artist 字段，IsSongLike）——浏览器播歌
+    // 也能有歌词，不再按来源一刀切（2026-09-08 Glenn 需求）。
+    private static readonly string[] BrowserAumidMarkers =
+    {
+        "chrome",        // Chrome（AUMID "Chrome" / "Chrome.{GUID}" 变体）
+        "msedge",        // Edge Win32 实际 AUMID 是 "MSEdge"（2026-09-08 SMTC 枚举实锤），
+                         // "microsoftedge" 匹配不上，曾致 Edge 漏拦
+        "microsoftedge", // Edge UWP 时代格式（Microsoft.MicrosoftEdge.Stable 等）
+        "mozilla",       // Firefox（Mozilla-308046B0AF4A39CB）
+        "firefox",
+        "brave",
+        "opera",         // OperaSoftware.OperaStable
+        "vivaldi",
+        "qqbrowser",     // QQ 浏览器
+        "360se",         // 360 安全浏览器
+        "360browser",
+    };
+
+    internal static bool IsBrowserSource(string aumid) =>
+        !string.IsNullOrEmpty(aumid)
+        && BrowserAumidMarkers.Any(m => aumid.Contains(m, StringComparison.OrdinalIgnoreCase));
+
     private void OnMediaChanged(MediaInfo info)
     {
         Dispatcher.Invoke(() =>
@@ -257,17 +398,53 @@ public partial class MusicModule : UserControl, ITaskbarModule
             _currentArtistFallback = info.Artist;
             _currentTitleFallback = info.Title;
 
+            // 视频类会话（无 Artist）= 静止显示模式：滚动是歌词体验的一部分，
+            // 视频标题不该滚。判定看内容不看来源：浏览器播歌（有 Artist）正常滚。
+            // 开关只随判定变化切换一次，切回歌曲时文本必然变化，
+            // SetLineContent 的 textChanged 路径会自动重启静态行滚动。
+            bool isVideo = !IsSongLike(info.Artist);
+            if (isVideo != _isVideoSession)
+            {
+                _isVideoSession = isVideo;
+                foreach (var line in _lines)
+                {
+                    line.ScrollEnabled = !isVideo;
+                    line.RefreshLayout(); // 立即停掉正在跑的滚动动画并按新模式静止重排
+                }
+                _lastLyricLine = "<FORCE>"; // 强制下一次渲染走完整 SetLineContent
+            }
+
             if (isSongChanged)
             {
                 _lastLyricLine = "";
                 _lastLyricIdx = -1;
                 _followIdx = -1; // 切歌重置：防止新歌第一句误触发垂直滚动（会从歌名两行滚过去）
                 RenderLyric(null);
-                EnsureLyricLoaded(info.Title, info.Artist);
+                // 切内容必打一条：定位过滤问题直接看 trace 拿真实 AUMID/Title/Artist
+                MediaService.Trace($"[MEDIA] song-changed aumid='{info.SourceApp}' " +
+                    $"artist='{info.Artist}' title={info.Title}");
+                if (isVideo)
+                {
+                    // 视频类（无 Artist）：标记 key（防播放状态变化反复进此分支）+ 清歌词，
+                    // 不联网搜索；切回歌曲时 key 变化，正常恢复搜索
+                    _currentLyricKey = newKey;
+                    _currentLyric = new();
+                    _currentTranslation = new();
+                }
+                else
+                {
+                    EnsureLyricLoaded(info.Title, info.Artist);
+                }
             }
             else
             {
-                ApplyStaticTextsByMode();
+                // 视频类会话：快进/暂停/播放等状态事件（isSongChanged=false）
+                // 一律不重渲染——文本没变，重渲染只会重放换句动画/重启滚动
+                // （ApplyStaticTextsByMode 的 FORCE 会绕过 RenderLyric 去重，
+                // 2026-09-08 实锤：每次进度事件都推挤一次）。
+                // 播放按钮图标在上面已更新，这里无事可做。
+                if (!_isVideoSession)
+                    ApplyStaticTextsByMode();
             }
         });
     }
@@ -295,6 +472,8 @@ public partial class MusicModule : UserControl, ITaskbarModule
     {
         try
         {
+            // 歌词搜索可观测性：过滤是否生效看他机/本机 trace 即可
+            MediaService.Trace($"[LYRIC] fetch title={title} artist={artist}");
             var result = await _lyricService.FetchLyricAsync(title, artist);
             if (requestKey != _currentLyricKey) return;
 

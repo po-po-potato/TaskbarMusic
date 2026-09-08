@@ -44,12 +44,12 @@ public partial class SettingsWindow : FluentWindow
         InitializeComponent();
         _config = shell.Config;
 
-        // 主题单点（ThemeService）：窗级深浅色跟随系统 + 喂 TitleBar 前景色，
-        // 材质映射到内建 backdrop；_theme 留给 OnSourceInitialized 喂 DWM 层
-        // （App.OnStartup 已提前应用过一次，此处幂等重应用确保新会话正确）。
+        // 主题单点（ThemeService）：窗级深浅色按 config 颜色模式（跟随系统/浅色/深色）
+        // + 喂 TitleBar 前景色，材质映射到内建 backdrop；_theme 留给 OnSourceInitialized
+        // 喂 DWM 层（App.OnStartup 已提前应用过一次，此处幂等重应用确保新会话正确）。
         // 材质用 Safe 版：系统透明关闭/RDP 下 DWM 不画 backdrop 而 Wpf.Ui 已清
         // WPF 背景 → 整窗露白（2026-08-27 他机实锤），降级 None 走纯色恢复路径
-        _theme = ThemeService.ApplySystemTheme();
+        _theme = ThemeService.ApplyTheme(_config.AppTheme);
         RootTitleBar.ApplicationTheme = _theme;
         _configBackdrop = _config.WindowBackdrop;
         WindowBackdropType = ThemeService.MapBackdropSafe(_configBackdrop);
@@ -124,12 +124,18 @@ public partial class SettingsWindow : FluentWindow
         };
 
         // 字体全局跟随：改监听壳分区 VM（字体 2026-08-26 迁常规分区）——
-        // 字体变化实时渲染整个设置窗；构造时先按当前配置应用初始字体
+        // 字体变化实时渲染整个设置窗；构造时先按当前配置应用初始字体。
+        // 颜色模式同理：切深/浅/跟随系统时实时重应用全套主题（不重开窗）
         ApplyGlobalFont(shell.Config.FontFamily);
         if (_shellSection != null)
         {
             _shellSection.ViewModel.FontChanged += OnGlobalFontChanged;
-            Closed += (_, _) => _shellSection.ViewModel.FontChanged -= OnGlobalFontChanged;
+            _shellSection.ViewModel.ThemeChanged += OnAppThemeChanged;
+            Closed += (_, _) =>
+            {
+                _shellSection.ViewModel.FontChanged -= OnGlobalFontChanged;
+                _shellSection.ViewModel.ThemeChanged -= OnAppThemeChanged;
+            };
         }
 
         Closed += (_, _) => SectionHost.Content = null;
@@ -152,6 +158,7 @@ public partial class SettingsWindow : FluentWindow
     {
         "常规" => SymbolRegular.Settings24,
         "音乐" => SymbolRegular.MusicNote224,
+        "番茄钟" => SymbolRegular.Clock24,
         "关于" => SymbolRegular.Info24,
         _ => SymbolRegular.Circle24,
     };
@@ -187,6 +194,7 @@ public partial class SettingsWindow : FluentWindow
     /// 清标题栏背景）——缺它会出现：纯色模式顶栏/左栏残留旧主题色、
     /// 亚克力模式 backdrop 丢失变纯色（2026-08-26 实锤，重新切材质才能恢复）。
     /// 传当前 WindowBackdropType 属性值——材质是用户选择，主题切换不改变它。
+    /// 仅跟随系统模式响应（固定深/浅色时系统切换无意义，跳过防覆盖用户选择）。
     /// 顺带跟随"透明效果"开关：切换时按新环境重映射材质（关闭→降级纯色防露白，
     /// 开启→恢复用户所选材质）</summary>
     private System.IntPtr ThemeChangeWndProc(System.IntPtr hwnd, int msg,
@@ -196,12 +204,9 @@ public partial class SettingsWindow : FluentWindow
         if (msg == WM_SETTINGCHANGE && lParam != System.IntPtr.Zero)
         {
             var what = System.Runtime.InteropServices.Marshal.PtrToStringUni(lParam);
-            if (what == "ImmersiveColorSet")
+            if (what == "ImmersiveColorSet" && _config.AppTheme == AppThemeMode.System)
             {
-                _theme = ThemeService.ApplySystemTheme();
-                RootTitleBar.ApplicationTheme = _theme;
-                Wpf.Ui.Appearance.WindowBackgroundManager.UpdateBackground(
-                    this, _theme, WindowBackdropType);
+                ReapplyTheme();
             }
             else if (what == "Personalize\\Transparency"
                 && ThemeService.IsSystemTransparencyEnabled() != _transparencyOn)
@@ -215,6 +220,21 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnGlobalFontChanged() =>
         ApplyGlobalFont(_shellSection?.ViewModel.FontFamily ?? "");
+
+    /// <summary>颜色模式切换（个性化设置项）：重应用全套主题——字典（ApplyTheme
+    /// 内含条背景防护）+ TitleBar + 背景序列 + DWM 层深浅。走与系统主题变化
+    /// hook 相同的完整序列，材质（用户选择）保持不变。设置窗开着即可见实时切换。</summary>
+    private void OnAppThemeChanged() => ReapplyTheme();
+
+    /// <summary>重应用主题完整序列（颜色模式切换 / 跟随系统模式的系统主题变化共用）</summary>
+    private void ReapplyTheme()
+    {
+        _theme = ThemeService.ApplyTheme(_config.AppTheme);
+        RootTitleBar.ApplicationTheme = _theme;
+        Wpf.Ui.Appearance.WindowBackgroundManager.UpdateBackground(
+            this, _theme, WindowBackdropType);
+        ThemeService.ApplyDarkModeAttribute(this, _theme);
+    }
 
     /// <summary>用户字体（单一字体构造——与条上歌词 ApplyTextStyle 同款用法，
     /// 该用法下 PingFang SC 渲染正常；复合 fallback 串 "A, B" 在代码构造下解析

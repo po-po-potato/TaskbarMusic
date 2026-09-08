@@ -14,8 +14,9 @@ public partial class App : Application
         // 切到系统深浅色，窗口解析时直接拿到正确 brush，不依赖换字典后的
         // DynamicResource 刷新（对字典 Source 替换的刷新不可靠，
         // 2026-08-26 分区标题一直黑字实锤）。backdrop 显式 None：
-        // Apply 默认 Mica 且作用于 MainWindow（= 任务栏条）会污染条
-        ThemeService.ApplySystemTheme();
+        // Apply 默认 Mica 且作用于 MainWindow（= 任务栏条）会污染条。
+        // 主题模式来自 config：跟随系统（默认）/浅色/深色（2026-09-08 个性化设置项）
+        ThemeService.ApplyTheme(AppConfig.Load().AppTheme);
         base.OnStartup(e);
     }
 }

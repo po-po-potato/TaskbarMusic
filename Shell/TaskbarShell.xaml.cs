@@ -20,6 +20,7 @@ public partial class TaskbarShell : Window
     private readonly ModuleHost _host = new();
     private readonly AppConfig _config = new();
     private SettingsWindow? _settingsWindow;
+    private SmtcMonitorWindow? _smtcMonitorWindow;
     private ShellSettingsSection? _shellSettingsSection;
     private TrayIcon? _trayIcon;
 
@@ -73,8 +74,15 @@ public partial class TaskbarShell : Window
         // Loaded/StickToTaskbar/托盘全不会跑（2026-08-26 "rebuild 后不显示"实锤）。
         // 首次启动保持默认显示；只有任务栏逃逸路径（Win32 层 SW_HIDE）才延迟显示。
 
-        // V1 单模块：音乐（M2 起由配置驱动注册 + E6 槽位分配）
+        // 模块注册（组合根）：配置驱动的显示状态/顺序由 ModuleHost 槽位模型管理，
+        // 挂新模块仅需一行 Register（E6 出口标准：零壳层逻辑改动）
         _host.Register(new MusicModule(_config));
+        // F2 番茄钟（M2 首个真实第二模块）：E6 单屏轮播的真实消费者——验证切换
+        // 过渡 + 常驻模型（滚走计时不断）
+        _host.Register(new PomodoroModule(_config));
+        // dev 验证后门：TBM_DEMO_MODULE=1 挂空壳模块（E6 双模块槽位实证用，不进发布形态）
+        if (Environment.GetEnvironmentVariable("TBM_DEMO_MODULE") == "1")
+            _host.Register(new DemoModule());
 
         _stickyTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
         // sticky tick 守卫：设置窗打开期间一律不贴附。此前只靠 OpenSettings 里
@@ -147,6 +155,10 @@ public partial class TaskbarShell : Window
         // （免手动托盘交互，冒烟验证设置窗构建路径用）
         if (Environment.GetEnvironmentVariable("TBM_AUTO_OPEN_SETTINGS") == "1")
             Dispatcher.BeginInvoke(OpenSettings, System.Windows.Threading.DispatcherPriority.Background);
+
+        // dev 验证后门：TBM_AUTO_OPEN_SMTC=1 启动后自动开 SMTC 监视器
+        if (Environment.GetEnvironmentVariable("TBM_AUTO_OPEN_SMTC") == "1")
+            Dispatcher.BeginInvoke(OpenSmtcMonitor, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     /// <summary>构建右键/托盘共用的 WinForms 菜单（每次新建，避免复用状态）。
@@ -156,6 +168,7 @@ public partial class TaskbarShell : Window
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("设置...", null, (_, _) => OpenSettings());
+        menu.Items.Add("SMTC 监视器...", null, (_, _) => OpenSmtcMonitor());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitApp());
         return menu;
@@ -404,6 +417,11 @@ public partial class TaskbarShell : Window
             if (FindAncestor<Thumb>(d) != null) return;
         }
 
+        // E6 常驻模型输入路由：BarDoubleClick 是广播事件，MusicModule 滚走仍订阅着——
+        // 番茄钟等其他模块显示时双击条空白区会误拉起音乐源程序（2026-09-08 实锤）。
+        // 修复：仅当前显示模块是订阅者（音乐）时才广播。V1 直连风格（is MusicModule），
+        // 与 RefreshModulesTextStyle 同款过渡写法，M2 后续统一改 CurrentModule 路由。
+        if (_host.CurrentModule is not MusicModule) return;
         BarDoubleClick?.Invoke();
     }
 
@@ -468,6 +486,38 @@ public partial class TaskbarShell : Window
             _settingsWindow.Close();
         }
         OpenSettings(); // null 时新建（材质已在 config 里，新窗构造时读取）
+    }
+
+    // ===== SMTC 监视器（诊断工具窗 A10） =====
+    /// <summary>打开 SMTC 监视器（条右键 / 托盘右键共用入口）。
+    /// 单实例语义与设置窗一致；sticky timer 同样停开（打开期间不贴附，与设置窗同守卫）。</summary>
+    internal void OpenSmtcMonitor()
+    {
+        if (_smtcMonitorWindow != null)
+        {
+            _smtcMonitorWindow.Activate();
+            return;
+        }
+
+        // V1 单模块直连取媒体服务（M2 槽位模型时改广播）
+        MediaService? media = null;
+        foreach (var module in _host.Modules)
+            if (module is MusicModule music)
+            {
+                media = music.Media;
+                break;
+            }
+        if (media == null) return;
+
+        _smtcMonitorWindow = new SmtcMonitorWindow(media, _config);
+        _smtcMonitorWindow.Closed += (_, _) =>
+        {
+            _smtcMonitorWindow = null;
+            _stickyTimer.Start();
+        };
+
+        _stickyTimer.Stop();
+        _smtcMonitorWindow.Show();
     }
 
     /// <summary>退出应用（条右键菜单 / 托盘右键共用入口）。

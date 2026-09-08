@@ -57,6 +57,19 @@ public enum LineTransition
     PushPair = 7,
 }
 
+/// <summary>应用颜色模式（设置窗-常规-个性化）：控件层深浅色选择</summary>
+public enum AppThemeMode
+{
+    /// <summary>跟随系统深浅色（默认，原行为）</summary>
+    System = 0,
+
+    /// <summary>固定浅色（系统切深色不变）</summary>
+    Light = 1,
+
+    /// <summary>固定深色（系统切浅色不变）</summary>
+    Dark = 2,
+}
+
 /// <summary>设置窗背景材质（Win11 22H2+ DWM backdrop；切换后重开设置窗生效）</summary>
 public enum WindowBackdrop
 {
@@ -68,6 +81,32 @@ public enum WindowBackdrop
 
     /// <summary>Acrylic：实时模糊背景，效果最明显但 resize 有开销</summary>
     Acrylic = 2,
+}
+
+/// <summary>模块显示状态（E6 槽位模型三档）</summary>
+public enum ModuleDisplayState
+{
+    /// <summary>常驻：完整显示（默认）</summary>
+    Expanded = 0,
+
+    /// <summary>折叠为图标（~28px 图标位）：点击图标临时展开/收回</summary>
+    Collapsed = 1,
+
+    /// <summary>禁用：不挂载（模块服务停止）</summary>
+    Disabled = 2,
+}
+
+/// <summary>模块槽位配置项（E6）：Id → 显示状态/顺序</summary>
+public class ModuleSlotConfig
+{
+    /// <summary>模块唯一标识（ITaskbarModule.Id）</summary>
+    public string Id { get; set; } = "";
+
+    /// <summary>显示状态三档</summary>
+    public ModuleDisplayState State { get; set; } = ModuleDisplayState.Expanded;
+
+    /// <summary>条内排序（小者靠左）；默认取注册序</summary>
+    public int Order { get; set; }
 }
 
 /// <summary>
@@ -130,11 +169,35 @@ public class AppConfig
     /// <summary>设置窗背景材质（提议做成设置项）；默认纯色</summary>
     public WindowBackdrop WindowBackdrop { get; set; } = WindowBackdrop.None;
 
+    /// <summary>应用颜色模式：跟随系统/浅色/深色；默认跟随系统</summary>
+    public AppThemeMode AppTheme { get; set; } = AppThemeMode.System;
+
     /// <summary>设置窗宽度（DIP）——关闭时保存实际值，打开时恢复（记忆用户拖动）</summary>
     public double SettingsWindowWidth { get; set; } = 1000;
 
     /// <summary>设置窗高度（DIP）——关闭时保存实际值，打开时恢复</summary>
     public double SettingsWindowHeight { get; set; } = 560;
+
+    /// <summary>模块配置（E6 单屏轮播）：Id → 启用状态/轮播顺序。
+    /// 未列出的模块默认启用、按注册序排列（ModuleHost 挂载时合并补齐）。</summary>
+    public List<ModuleSlotConfig> ModuleSlots { get; set; } = new();
+
+    /// <summary>当前显示的模块 Id（E6 单屏轮播）：滚轮切换时落盘，重启恢复上次看的模块</summary>
+    public string? ActiveModuleId { get; set; }
+
+    // ===== 番茄钟模块（F2）=====
+
+    /// <summary>专注时长（分钟）；改配置只影响下一段，运行中不打断</summary>
+    public int PomodoroWorkMin { get; set; } = 25;
+
+    /// <summary>休息时长（分钟）；专注完成自动进入</summary>
+    public int PomodoroBreakMin { get; set; } = 5;
+
+    /// <summary>今日完成番茄数（跨重启累计，当日有效）</summary>
+    public int PomodoroTodayCount { get; set; } = 0;
+
+    /// <summary>今日计数对应的日期键（yyyy-MM-dd）；不等当天即清零重计</summary>
+    public string PomodoroTodayKey { get; set; } = "";
 
     private static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaskbarMusic");
