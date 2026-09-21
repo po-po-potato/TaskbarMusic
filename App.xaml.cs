@@ -16,7 +16,11 @@ public partial class App : Application
         // 2026-08-26 分区标题一直黑字实锤）。backdrop 显式 None：
         // Apply 默认 Mica 且作用于 MainWindow（= 任务栏条）会污染条。
         // 主题模式来自 config：跟随系统（默认）/浅色/深色（2026-09-08 个性化设置项）
-        ThemeService.ApplyTheme(AppConfig.Load().AppTheme);
+        ThemeService.ApplyTheme(AppConfig.Shared.AppTheme);
         base.OnStartup(e);
+
+        // A7 多显示器：StartupUri 已移除（App.xaml），建条权收拢 ShellManager
+        // ——按 EnabledMonitors 逐屏 new TaskbarShell（默认仅主屏，单屏行为不变）
+        ShellManager.Startup();
     }
 }

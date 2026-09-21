@@ -11,18 +11,30 @@ namespace TaskbarMusic;
 /// <summary>
 /// 任务栏壳层：只管 Win32 嵌入/贴附/拖拽/调宽/DPI/sticky/设置窗宿主，
 /// 不知道任何音乐逻辑；模块经 ModuleHost 挂载。
-/// M2 计划（A7 多显示器）：本类按可实例化设计——每屏 new 一条 Shell，
-/// 模块服务单例跨条共享（届时把模块注册从构造函数迁出到 App 级）。
+/// A7 多显示器：每屏 new 一条 Shell（monitorKey 绑定目标任务栏——主屏
+/// Shell_TrayWnd / 副屏 Shell_SecondaryTrayWnd）；配置/服务单例跨条共享
+/// （AppConfig.Shared + MediaService.Shared + 番茄钟 static 状态机），
+/// 每条各挂一套模块 View。托盘图标与设置窗仅主条（IsPrimary）。
 /// </summary>
 public partial class TaskbarShell : Window
 {
     private readonly DispatcherTimer _stickyTimer;
     private readonly ModuleHost _host = new();
     private readonly AppConfig _config = new();
-    private SettingsWindow? _settingsWindow;
-    private SmtcMonitorWindow? _smtcMonitorWindow;
     private ShellSettingsSection? _shellSettingsSection;
     private TrayIcon? _trayIcon;
+
+    /// <summary>A7：本条绑定的显示器设备名（\\.\DISPLAY1 形式）</summary>
+    private readonly string _monitorKey;
+
+    /// <summary>A7：本条绑定的显示器设备名（ShellManager 登记/对账用）</summary>
+    internal string MonitorKey => _monitorKey;
+
+    /// <summary>A7：是否主屏条（托盘图标/设置窗/SMTC 监视器归属主条）</summary>
+    internal bool IsPrimary { get; }
+
+    /// <summary>A7：本条的横向偏移（per-monitor 存储；Width 全局共享）</summary>
+    private double OffsetXCurrent => _config.OffsetXOf(_monitorKey, IsPrimary);
 
     private bool _isDragging;
     private bool _isResizing;
@@ -60,15 +72,22 @@ public partial class TaskbarShell : Window
     /// <summary>壳持有的全局配置（设置分区 VM 绑定用；V1 单文件，M2 拆模块节）</summary>
     internal AppConfig Config => _config;
 
-    /// <summary>壳的设置分区（布局/重置），常驻复用</summary>
-    public FrameworkElement SettingsSectionView
-        => _shellSettingsSection ??= new ShellSettingsSection(this);
+    /// <summary>壳的设置分区（布局/重置），常驻复用。
+    /// 通过 ShellManager.BuildSectionList 暴露给设置窗，跟随 TrayOwner 动态。
+    /// 构造无参（2026-09-09 解耦：不再绑宿主条实例，所有事件转发 ShellManager）</summary>
+    internal FrameworkElement ShellSectionForSettings
+        => _shellSettingsSection ??= new ShellSettingsSection();
 
-    public TaskbarShell()
+    /// <summary>A7 多显示器：绑定目标屏建条。config 用进程单例（多条共享同一实例，
+    /// 否则各自 Load/Save 互相覆盖）；每条各 new 一套模块实例（WPF View 不可跨视觉树），
+    /// 服务层单例共享（MediaService/LyricService/番茄钟 static 状态机）。</summary>
+    public TaskbarShell(string monitorKey, bool isPrimary)
     {
         InitializeComponent();
+        _monitorKey = monitorKey;
+        IsPrimary = isPrimary;
 
-        _config = AppConfig.Load();
+        _config = AppConfig.Shared;
         Width = _config.Width;
         // 注意：不能在这里 Visibility=Hidden 隐藏——WPF 隐藏窗口不创建 HWND，
         // Loaded/StickToTaskbar/托盘全不会跑（2026-08-26 "rebuild 后不显示"实锤）。
@@ -78,8 +97,19 @@ public partial class TaskbarShell : Window
         // 挂新模块仅需一行 Register（E6 出口标准：零壳层逻辑改动）
         _host.Register(new MusicModule(_config));
         // F2 番茄钟（M2 首个真实第二模块）：E6 单屏轮播的真实消费者——验证切换
-        // 过渡 + 常驻模型（滚走计时不断）
+        // 过渡 + 常驻模型（滚走计时不断）；A7 static 状态机跨条同步
         _host.Register(new PomodoroModule(_config));
+        // A3 天气（2026-09-21 定稿）：Open-Meteo 免费无 key，当前天气 + 今明后三天，
+        // 30min 定时 + 断网缓存；条内三元素（图标/温度/描述），低频信息归 hover 浮层
+        _host.Register(new WeatherModule(_config));
+        // A4 财经（2026-09-21 定稿）：单股静态轮播（行情 5s 轮询 + 展示 8s 轮换解耦），
+        // 分时 sparkline 红涨绿跌；数据源腾讯 qt.gtimg / ifzq.gtimg（合规遗留决策点）
+        _host.Register(new StocksModule(_config));
+        // A6 网速监控（2026-09-18 定稿）：IP Helper 累计字节差分（TrafficMonitor 同源），
+        // 1s 采样 + 回绕守卫 + 多网卡取流量最大；A7 static 采样器跨条共享
+        _host.Register(new NetSpeedModule(_config));
+        // A7 倒数日（2026-09-18 定稿）：纪念日+手动倒计时合并，最近一项 + 天数颜色分层
+        _host.Register(new CountdownModule(_config));
         // dev 验证后门：TBM_DEMO_MODULE=1 挂空壳模块（E6 双模块槽位实证用，不进发布形态）
         if (Environment.GetEnvironmentVariable("TBM_DEMO_MODULE") == "1")
             _host.Register(new DemoModule());
@@ -92,7 +122,7 @@ public partial class TaskbarShell : Window
         // 实锤：wbset10 无 Mica 仍卡）。标志位守卫无视 timer 谁 Start 都不 tick。
         _stickyTimer.Tick += (_, _) =>
         {
-            if (_settingsWindow != null) return; // 设置窗开着：不抢 UI 线程
+            if (ShellManager.SettingsWindowOpen || ShellManager.SmtcMonitorOpen) return; // 设置窗/SMTC 窗开着：不抢 UI 线程
             if (!_isDragging && !_isResizing) StickToTaskbar();
         };
 
@@ -100,18 +130,15 @@ public partial class TaskbarShell : Window
         Closing += TaskbarShell_Closing;
 
         // 兜底重建：逃逸万一失败，窗口被任务栏销毁带走（Closed 且非用户退出）
-        // → 异步重建新壳，等新任务栏出现重新嵌入（_pendingShow 机制控制显示时机）
+        // → 交 ShellManager 决定是否重建（该屏仍在勾选集合才重建；A7 前
+        // 直接 new TaskbarShell()，多屏后建/关条的管理权收拢到 manager）
         Closed += (_, _) =>
         {
             if (_explicitExit) return;
-            // 先关设置窗：它持有本 shell 引用，重建后成孤儿（悬空引用 +
-            // 新壳无法复用，用户再开会开第二个设置窗——综合检查发现的 bug）
-            _settingsWindow?.Close();
-            Dispatcher.BeginInvoke(() =>
-            {
-                var shell = new TaskbarShell();
-                shell.Show();
-            });
+            // 设置窗不在这里连带关闭：用户在设置窗里增删显示器勾选会关掉宿主条，
+            // 连带关 = "设置窗自杀"（2026-09-09 实锤）。改由 ShellManager 迁移——
+            // 立即关旧窗（防双开），替代条就绪后新宿主重开
+            ShellManager.OnShellClosed(this);
         };
 
         MouseLeftButtonDown += Root_MouseLeftButtonDown;
@@ -148,17 +175,18 @@ public partial class TaskbarShell : Window
         // 模块挂载（顺序对齐原 MainWindow_Loaded：先完成贴附，再启动模块）
         _host.AttachAll(this, ModulePanel);
 
-        // 托盘图标（右键：设置/退出；双击：设置）
-        _trayIcon = new TrayIcon(this);
+        // 托盘图标（右键：设置/退出；双击：设置）——单实例，归属 manager 收口：
+        // 主条优先，只挂副屏时跟副条走（Loaded 早于 manager 重算时幂等兜底）
+        if (ShellManager.ShouldOwnTray(this)) AttachTray();
 
         // dev 验证后门：TBM_AUTO_OPEN_SETTINGS=1 启动后自动开设置窗
         // （免手动托盘交互，冒烟验证设置窗构建路径用）
         if (Environment.GetEnvironmentVariable("TBM_AUTO_OPEN_SETTINGS") == "1")
-            Dispatcher.BeginInvoke(OpenSettings, System.Windows.Threading.DispatcherPriority.Background);
+            Dispatcher.BeginInvoke(ShellManager.OpenSettings, System.Windows.Threading.DispatcherPriority.Background);
 
         // dev 验证后门：TBM_AUTO_OPEN_SMTC=1 启动后自动开 SMTC 监视器
         if (Environment.GetEnvironmentVariable("TBM_AUTO_OPEN_SMTC") == "1")
-            Dispatcher.BeginInvoke(OpenSmtcMonitor, System.Windows.Threading.DispatcherPriority.Background);
+            Dispatcher.BeginInvoke(ShellManager.OpenSmtcMonitor, System.Windows.Threading.DispatcherPriority.Background);
     }
 
     /// <summary>构建右键/托盘共用的 WinForms 菜单（每次新建，避免复用状态）。
@@ -167,11 +195,25 @@ public partial class TaskbarShell : Window
     internal System.Windows.Forms.ContextMenuStrip BuildContextMenu()
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("设置...", null, (_, _) => OpenSettings());
-        menu.Items.Add("SMTC 监视器...", null, (_, _) => OpenSmtcMonitor());
+        // 设置窗已升级为 ShellManager 进程级单例（不再绑宿主条），所有入口统一转发
+        menu.Items.Add("设置...", null, (_, _) => ShellManager.OpenSettings());
+        menu.Items.Add("SMTC 监视器...", null, (_, _) => ShellManager.OpenSmtcMonitor());
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitApp());
         return menu;
+    }
+
+    /// <summary>建托盘（幂等）：EnsureTray 宿主迁移用</summary>
+    internal void AttachTray()
+    {
+        _trayIcon ??= new TrayIcon(this);
+    }
+
+    /// <summary>拆托盘（幂等）：宿主转移/非宿主条用</summary>
+    internal void DetachTray()
+    {
+        _trayIcon?.Dispose();
+        _trayIcon = null;
     }
 
     private void TaskbarShell_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -192,14 +234,19 @@ public partial class TaskbarShell : Window
     // force=true：拖动/调宽/菜单关闭等确定需要立即校正的场景，跳过早退。
     private void StickToTaskbar(bool force = false)
     {
-        var tray = Win32.FindWindow("Shell_TrayWnd", null);
-        if (tray == IntPtr.Zero) return;
-
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
 
-        var parent = Win32.GetParent(hwnd);
-        bool needReparent = parent != tray;
+        // A7 per-monitor 任务栏查找：正常情况沿用上次快照（GetParent 匹配即免查找），
+        // 只有换父（首次嵌入/任务栏重建/逃逸后）才全量找——EnumWindows 副屏匹配
+        // 的成本只发生在重建路径，500ms tick 零额外开销。
+        var tray = _lastTray;
+        bool needReparent = tray == IntPtr.Zero || Win32.GetParent(hwnd) != tray;
+        if (needReparent)
+        {
+            tray = FindTaskbarFor(_monitorKey, IsPrimary);
+            if (tray == IntPtr.Zero) return; // 本屏任务栏暂不存在（explorer 重启中/显示器拔了）
+        }
 
         if (needReparent)
         {
@@ -227,7 +274,7 @@ public partial class TaskbarShell : Window
             && taskbarClientHeight == _lastTaskbarHeight
             && dpi == _lastDpi
             && _config.Width == _lastWidth
-            && _config.OffsetX == _lastOffsetX)
+            && OffsetXCurrent == _lastOffsetX)
         {
             return;
         }
@@ -247,7 +294,32 @@ public partial class TaskbarShell : Window
         _lastTaskbarHeight = taskbarClientHeight;
         _lastDpi = dpi;
         _lastWidth = _config.Width;
-        _lastOffsetX = _config.OffsetX;
+        _lastOffsetX = OffsetXCurrent;
+    }
+
+    /// <summary>A7：找本屏的任务栏窗口。主屏 = Shell_TrayWnd；副屏 = 枚举
+    /// Shell_SecondaryTrayWnd（Windows 每个副屏任务栏一个该类窗口），
+    /// 用窗口所在显示器设备名匹配。找不到返回 IntPtr.Zero（调用方早退等下轮）。</summary>
+    private static IntPtr FindTaskbarFor(string monitorKey, bool isPrimary)
+    {
+        var primary = Win32.FindWindow("Shell_TrayWnd", null);
+        if (isPrimary) return primary;
+
+        IntPtr found = IntPtr.Zero;
+        Win32.EnumWindows((hwnd, _) =>
+        {
+            if (found != IntPtr.Zero) return false;
+            var sb = new System.Text.StringBuilder(64);
+            Win32.GetClassName(hwnd, sb, 64);
+            if (sb.ToString() == "Shell_SecondaryTrayWnd"
+                && Win32.MonitorDeviceOf(hwnd) == monitorKey)
+            {
+                found = hwnd;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
     }
 
     // ===== 任务栏重启逃逸 =====
@@ -293,7 +365,7 @@ public partial class TaskbarShell : Window
         _heightDip = taskbarClientHeight / scale;
 
         int w = (int)(_config.Width * scale);
-        int offsetX = (int)(_config.OffsetX * scale);
+        int offsetX = (int)(OffsetXCurrent * scale);
 
         Win32.MoveWindow(hwnd, offsetX, 0, w, taskbarClientHeight, true);
 
@@ -323,7 +395,7 @@ public partial class TaskbarShell : Window
         }
 
         _dragPending = true;
-        _dragStartOffsetX = _config.OffsetX;
+        _dragStartOffsetX = OffsetXCurrent;
         Win32.GetCursorPos(out var pt);
         _dragStartCursorX = pt.X;
         CaptureMouse();
@@ -395,7 +467,7 @@ public partial class TaskbarShell : Window
         double newWidth = Math.Clamp(_config.Width - delta, MinWidth_, MaxWidth_);
         double actualDelta = _config.Width - newWidth;
         _config.Width = newWidth;
-        _config.OffsetX = Math.Max(0, _config.OffsetX + actualDelta);
+        _config.SetOffsetX(_monitorKey, Math.Max(0, OffsetXCurrent + actualDelta));
         Width = newWidth;
         StickToTaskbar(force: true);
     }
@@ -428,7 +500,7 @@ public partial class TaskbarShell : Window
     // ===== 右键菜单：重置（壳设置分区回调用）=====
     internal void ResetPosition()
     {
-        _config.OffsetX = 200;
+        _config.SetOffsetX(_monitorKey, 200); // A7：只重置本条
         _config.Save();
         StickToTaskbar(force: true);
     }
@@ -450,75 +522,10 @@ public partial class TaskbarShell : Window
                 music.ApplyTextStyle();
     }
 
-    // ===== 设置窗口（壳层基础设施 A8：分区容器）=====
-    /// <summary>打开设置窗（条右键菜单 / 托盘右键 / 托盘双击共用入口）</summary>
-    internal void OpenSettings()
-    {
-        if (_settingsWindow != null)
-        {
-            _settingsWindow.Activate();
-            return;
-        }
-
-        _settingsWindow = new SettingsWindow(this, _host);
-        // 主窗口已嵌入任务栏（WS_CHILD 子窗口），不能作为 Owner（会抛异常）。
-        // 设置窗为常规窗口（非 Topmost）：ShowInTaskbar=True 保证被遮挡时可经
-        // 任务栏/Alt+Tab 唤回（Topmost 是旧浮层设计残留，2026-08-26 移除）。
-        _settingsWindow.Closed += (_, _) =>
-        {
-            _settingsWindow = null;
-            _stickyTimer.Start();
-        };
-
-        // 背景材质已由 FluentWindow.ApplicationBackdrop 内建接管
-        // （SettingsWindow 构造时经 ThemeService.MapBackdrop 从 config 映射），
-        // 不再需要 SourceInitialized 手写 DWM 三步法
-        _stickyTimer.Stop();
-        _settingsWindow.Show();
-    }
-
-    /// <summary>重开设置窗（材质切换用——backdrop 是窗口级一次性设置，重开干净生效）</summary>
-    internal void ReopenSettings()
-    {
-        if (_settingsWindow != null)
-        {
-            // Close 同步触发 Closed 处理器：_settingsWindow = null + sticky 重启
-            _settingsWindow.Close();
-        }
-        OpenSettings(); // null 时新建（材质已在 config 里，新窗构造时读取）
-    }
-
-    // ===== SMTC 监视器（诊断工具窗 A10） =====
-    /// <summary>打开 SMTC 监视器（条右键 / 托盘右键共用入口）。
-    /// 单实例语义与设置窗一致；sticky timer 同样停开（打开期间不贴附，与设置窗同守卫）。</summary>
-    internal void OpenSmtcMonitor()
-    {
-        if (_smtcMonitorWindow != null)
-        {
-            _smtcMonitorWindow.Activate();
-            return;
-        }
-
-        // V1 单模块直连取媒体服务（M2 槽位模型时改广播）
-        MediaService? media = null;
-        foreach (var module in _host.Modules)
-            if (module is MusicModule music)
-            {
-                media = music.Media;
-                break;
-            }
-        if (media == null) return;
-
-        _smtcMonitorWindow = new SmtcMonitorWindow(media, _config);
-        _smtcMonitorWindow.Closed += (_, _) =>
-        {
-            _smtcMonitorWindow = null;
-            _stickyTimer.Start();
-        };
-
-        _stickyTimer.Stop();
-        _smtcMonitorWindow.Show();
-    }
+    // ===== 设置窗口 / SMTC 监视器（已上移 ShellManager 进程级单例）=====
+    // 原实例字段 + OpenSettings / ReopenSettings / OpenSmtcMonitor 已移除——
+    // 设置窗与条在 Win32 层本就独立（无 Owner/WS_CHILD 关联），统一归 ShellManager 管。
+    // 分区内容跟 TrayOwner 动态刷新；宿主条销毁时窗不关，只换内容。
 
     /// <summary>退出应用（条右键菜单 / 托盘右键共用入口）。
     /// 显式退出标志必须先于 Shutdown 设置——Closed 兜底重建靠它区分
@@ -526,6 +533,7 @@ public partial class TaskbarShell : Window
     internal void ExitApp()
     {
         _explicitExit = true;
+        ShellManager.MarkExiting(); // A7：进程退出中，Closed 兜底重建全部静默
         _config.Save();
         Application.Current.Shutdown();
     }

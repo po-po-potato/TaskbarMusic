@@ -26,7 +26,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
 
     /// <summary>媒体服务实例（SMTC 监视窗枚举会话用）</summary>
     internal MediaService? Media => _media;
-    private readonly LyricService _lyricService = new();
+    private readonly LyricService _lyricService = LyricService.Shared;
     private List<LrcParser.LrcLine> _currentLyric = new();
     private List<LrcParser.LrcLine> _currentTranslation = new();
     private string _currentLyricKey = "";
@@ -112,10 +112,11 @@ public partial class MusicModule : UserControl, ITaskbarModule
         ApplyTextStyle();
 
         _mediaRetryActive = true;
-        _media = new MediaService
-        {
-            PauseFadeOutSec = _config.PauseFadeOutSec
-        };
+        // A7 多显示器：MediaService 进程级单例——多条各挂一个 MusicModule 实例，
+        // 但 SMTC 监听器共享（各自订阅 MediaChanged 多播，切歌全条同步）。
+        // StartOnceAsync 幂等：另一条 attach 时不再重复 RequestAsync。
+        _media = MediaService.Shared;
+        _media.PauseFadeOutSec = _config.PauseFadeOutSec;
         _media.MediaChanged += OnMediaChanged;
         try { _ = StartMediaWithRetryAsync(); }
         catch { }
@@ -141,7 +142,7 @@ public partial class MusicModule : UserControl, ITaskbarModule
         {
             try
             {
-                var request = _media!.StartAsync();
+                var request = _media!.StartOnceAsync();
                 var timeout = System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(8));
                 var done = await System.Threading.Tasks.Task.WhenAny(request, timeout);
                 if (done == request)
@@ -168,8 +169,8 @@ public partial class MusicModule : UserControl, ITaskbarModule
             _shell = null;
         }
         _mediaRetryActive = false;
-        // E6 禁用态：模块 View 已隐藏/移除，媒体事件必须退订——
-        // 否则 SMTC 事件继续驱动隐藏视图的歌词渲染（空转 + 抢 UI 线程）
+        // E6/A7 禁用态：退订自己的事件（SMTC session 共享单例永续运行，
+        // 不拆——另一条还可能在用，且 SMTC 重连可靠性差）
         if (_media != null)
         {
             _media.MediaChanged -= OnMediaChanged;

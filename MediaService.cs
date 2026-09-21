@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
@@ -112,6 +113,26 @@ public class MediaService
     /// 冻结值 = 事件时刻外推 + 此补偿，恢复后才能与真实进度对齐。
     /// </summary>
     public double PauseFadeOutSec { get; set; }
+
+    // ===== A7 多显示器：进程级单例 =====
+    // 多条 Shell 各挂一个 MusicModule 实例，但 SMTC 监听器全进程只能有一个
+    // （多个 RequestAsync 监听器 = 事件重复触发 + 状态双份）。共享后：
+    // OnAttach 各自订阅 MediaChanged（多播），切歌广播到所有条——天然同步。
+    private static MediaService? _shared;
+    public static MediaService Shared => _shared ??= new MediaService();
+
+    private int _startedOnce;
+
+    /// <summary>幂等启动：首个调用者真正执行 StartAsync，后续（另一条 attach /
+    /// 禁用再启用）直接返回。SMTC session 一旦连上进程内永续运行——E6 禁用语义
+    /// 退化为"退订 UI 事件"，不拆 session（拆了重连的可靠性差，曾有 6 分钟
+    /// 连不上的前科）。</summary>
+    public Task StartOnceAsync()
+    {
+        if (Interlocked.CompareExchange(ref _startedOnce, 1, 0) != 0)
+            return Task.CompletedTask;
+        return StartAsync();
+    }
 
     public async Task StartAsync()
     {

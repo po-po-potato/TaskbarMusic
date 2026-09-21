@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
@@ -20,9 +21,9 @@ namespace TaskbarMusic;
 /// </summary>
 public partial class SettingsWindow : FluentWindow
 {
-    private readonly FrameworkElement[] _sections;
+    private FrameworkElement[] _sections = Array.Empty<FrameworkElement>();
     private readonly AppConfig _config;
-    private readonly ShellSettingsSection? _shellSection;
+    private ShellSettingsSection? _shellSection;
 
     /// <summary>右侧内容宿主（代码构造，经 INavigationView.ReplaceContent 装载；
     /// 24px 左右留白对齐 WPF Gallery 设置页呼吸感）</summary>
@@ -39,10 +40,13 @@ public partial class SettingsWindow : FluentWindow
     /// <summary>上次采样到的系统透明效果开关（WM_SETTINGCHANGE 跟随用）</summary>
     private bool _transparencyOn = true;
 
-    public SettingsWindow(TaskbarShell shell, ModuleHost host)
+    /// <summary>构造：进程级单例（归 ShellManager 管），Win32 层与任何条无关联。
+    /// 分区内容跟 ShellManager.TrayOwner 走：构造时建一次，TrayOwner 变化时
+    /// 由订阅的事件 RebuildSections 重建（设置窗不关，位置/尺寸保持）</summary>
+    public SettingsWindow()
     {
         InitializeComponent();
-        _config = shell.Config;
+        _config = AppConfig.Shared;
 
         // 主题单点（ThemeService）：窗级深浅色按 config 颜色模式（跟随系统/浅色/深色）
         // + 喂 TitleBar 前景色，材质映射到内建 backdrop；_theme 留给 OnSourceInitialized
@@ -68,44 +72,17 @@ public partial class SettingsWindow : FluentWindow
             _config.Save();
         };
 
-        // 分区与导航项一一对应：壳分区（常规）+ 各模块分区（V1：音乐）
-        var titles = new List<string>();
-        var sections = new List<FrameworkElement>();
-        if (shell.SettingsSectionView != null)
+        // 订阅 TrayOwner 变化：宿主条销毁/切换时刷新分区内容（窗不关）
+        ShellManager.TrayOwnerChanged += RebuildSections;
+        Closed += (_, _) =>
         {
-            titles.Add("常规");
-            sections.Add(shell.SettingsSectionView);
-        }
-        foreach (var module in host.Modules)
-        {
-            if (module.SettingsSection != null)
-            {
-                titles.Add(module.DisplayName);
-                sections.Add(module.SettingsSection);
-            }
-        }
+            SectionHost.Content = null;
+            UnsubscribeShellSectionEvents();
+            ShellManager.TrayOwnerChanged -= RebuildSections;
+        };
 
-        // 关于页（开源准备）：版本号读程序集元数据，固定挂在导航末尾
-        titles.Add("关于");
-        sections.Add(new AboutSection());
-        _sections = sections.ToArray();
-        _shellSection = _sections.Length > 0 ? _sections[0] as ShellSettingsSection : null;
-
-        for (int i = 0; i < titles.Count; i++)
-        {
-            // 闭包捕获索引避免经典循环变量陷阱。
-            // 库的 Navigate(Type) 会经 activator 新建页实例，与"分区实例常驻、
-            // 宿主持有"架构冲突，故不走 TargetPageType 导航——改监听 item 按下
-            // 手动切 Content，选中视觉用 IsActive 手动管理
-            int index = i;
-            var item = new NavigationViewItem
-            {
-                Content = titles[i],
-                Icon = new SymbolIcon { Symbol = IconForSection(titles[i]) },
-            };
-            item.PreviewMouseLeftButtonDown += (_, _) => SelectItem(index);
-            NavView.MenuItems.Add(item);
-        }
+        // 首次构造分区（取当前 TrayOwner 的内容）
+        RebuildSections();
 
         // 内容区宿主装载：NavigationView 非 ContentControl，接口 ReplaceContent
         // 装入滚动宿主；分区切换只换 SectionHost.Content（装配语义与旧版一致）。
@@ -123,22 +100,86 @@ public partial class SettingsWindow : FluentWindow
                 SelectItem(0);
         };
 
-        // 字体全局跟随：改监听壳分区 VM（字体 2026-08-26 迁常规分区）——
-        // 字体变化实时渲染整个设置窗；构造时先按当前配置应用初始字体。
-        // 颜色模式同理：切深/浅/跟随系统时实时重应用全套主题（不重开窗）
-        ApplyGlobalFont(shell.Config.FontFamily);
+        // 字体全局初始（构造时按当前配置应用；后续变化通过 ShellSection 事件订阅）
+        ApplyGlobalFont(_config.FontFamily);
+    }
+
+    /// <summary>重建分区（构造 + TrayOwner 变化时调用）：从 ShellManager 取当前
+    /// TrayOwner 的 ShellSettingsSection + 各模块 SettingsSection；NavView 重建。
+    /// 旧 ShellSettingsSection 的事件先解绑防 VM 持有死引用</summary>
+    private void RebuildSections()
+    {
+        // 记住当前选中的分区标题：真有结构变化（显示器增删等）重建后恢复
+        // 用户所在分区，而不是强制跳回首分区（2026-09-21 修复"跳回常规"体验）
+        string? activeTitle = null;
+        for (int i = 0; i < NavView.MenuItems.Count; i++)
+            if (NavView.MenuItems[i] is NavigationViewItem { IsActive: true } it)
+                activeTitle = it.Content as string;
+
+        UnsubscribeShellSectionEvents();
+
+        var titleBuilder = new List<string>();
+        var sectionBuilder = new List<FrameworkElement>();
+
+        var owner = ShellManager.TrayOwner;
+        if (owner != null)
+        {
+            titleBuilder.Add("常规");
+            sectionBuilder.Add(owner.ShellSectionForSettings);
+            foreach (var module in owner.Host.ModulesInOrder)
+            {
+                if (module.SettingsSection != null)
+                {
+                    titleBuilder.Add(module.DisplayName);
+                    sectionBuilder.Add(module.SettingsSection);
+                }
+            }
+        }
+
+        // 关于页（开源准备）：版本号读程序集元数据，固定挂在导航末尾
+        titleBuilder.Add("关于");
+        sectionBuilder.Add(new AboutSection());
+
+        _sections = sectionBuilder.ToArray();
+        _shellSection = _sections.Length > 0 ? _sections[0] as ShellSettingsSection : null;
+
+        // 重建 NavView item 集合
+        NavView.MenuItems.Clear();
+        for (int i = 0; i < titleBuilder.Count; i++)
+        {
+            int index = i;
+            var item = new NavigationViewItem
+            {
+                Content = titleBuilder[i],
+                Icon = new SymbolIcon { Symbol = IconForSection(titleBuilder[i]) },
+            };
+            item.PreviewMouseLeftButtonDown += (_, _) => SelectItem(index);
+            NavView.MenuItems.Add(item);
+        }
+
+        // 内容区装载（Loaded 之后才有效；Loaded 之前 RebuildSections 是为捕获初始内容）
+        if (IsLoaded && _sections.Length > 0)
+        {
+            int restore = titleBuilder.IndexOf(activeTitle ?? "");
+            SelectItem(restore >= 0 ? restore : 0);
+        }
+
+        // 重新订阅新 ShellSettingsSection 的事件
         if (_shellSection != null)
         {
             _shellSection.ViewModel.FontChanged += OnGlobalFontChanged;
             _shellSection.ViewModel.ThemeChanged += OnAppThemeChanged;
-            Closed += (_, _) =>
-            {
-                _shellSection.ViewModel.FontChanged -= OnGlobalFontChanged;
-                _shellSection.ViewModel.ThemeChanged -= OnAppThemeChanged;
-            };
         }
+    }
 
-        Closed += (_, _) => SectionHost.Content = null;
+    /// <summary>解绑当前 ShellSection VM 的事件（重建前 + 关闭时调用）</summary>
+    private void UnsubscribeShellSectionEvents()
+    {
+        if (_shellSection != null)
+        {
+            _shellSection.ViewModel.FontChanged -= OnGlobalFontChanged;
+            _shellSection.ViewModel.ThemeChanged -= OnAppThemeChanged;
+        }
     }
 
     /// <summary>选中导航项：切分区内容 + 手动维护 item 选中视觉（IsActive）</summary>
@@ -159,6 +200,10 @@ public partial class SettingsWindow : FluentWindow
         "常规" => SymbolRegular.Settings24,
         "音乐" => SymbolRegular.MusicNote224,
         "番茄钟" => SymbolRegular.Clock24,
+        "天气" => SymbolRegular.WeatherSunnyHigh24,
+        "财经" => SymbolRegular.ChartMultiple24,
+        "网速" => SymbolRegular.Wifi124,
+        "倒数日" => SymbolRegular.CalendarLtr24,
         "关于" => SymbolRegular.Info24,
         _ => SymbolRegular.Circle24,
     };

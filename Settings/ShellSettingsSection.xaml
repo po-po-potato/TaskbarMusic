@@ -67,6 +67,19 @@
             </StackPanel>
         </ui:Card>
 
+        <!-- ===== 显示器（A7 多显示器）：勾选挂条的屏幕，全不勾回落主屏 ===== -->
+        <TextBlock Text="显示器" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <StackPanel x:Name="MonitorListPanel" />
+                <TextBlock Text="勾选要在该屏任务栏挂条的显示器（可只挂副屏）；全部取消勾选时回落主屏保底；模块状态（切歌/倒计时）跨条自动同步；各条位置独立拖动互不影响"
+                           FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
         <!-- ===== 个性化 ===== -->
         <TextBlock Text="个性化" FontSize="20" FontWeight="SemiBold" Margin="0,28,0,16"
                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" />

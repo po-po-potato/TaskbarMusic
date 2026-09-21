@@ -32,6 +32,10 @@ public sealed class ModuleHost
     ///   结束后清掉恢复 ClearType 文本渲染。</summary>
     private const int FadeInMs = 120;
 
+    /// <summary>A7 跨条同步：某条滚轮切换后广播（moduleId + 源 host）。
+    /// 其他条的 host 收到后本地切到同一模块（不落盘、不再广播——防环）。</summary>
+    internal static event Action<string, ModuleHost>? ModuleSwitched;
+
     private readonly List<ITaskbarModule> _modules = new();
     private Grid? _panel;
     private AppConfig? _config;
@@ -146,6 +150,11 @@ public sealed class ModuleHost
             _config.Save();
         }
         MediaService.Trace($"[E6 switch] {CurrentModule?.Id ?? "none"} -> {next.Id} ({source})");
+        ModuleSwitched?.Invoke(next.Id, this); // A7：广播其他条同步切换
+
+        // 滚走的模块先收 hover-out（不可见即无交互）：hover 浮层（F2.4/E5）
+        // 需要立即收起，不能等鼠标物理离开条才关
+        CurrentModule?.OnHoverChanged(false);
 
         _activeIndex = index;
         ShowView(next.View, animate: true);

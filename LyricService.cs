@@ -25,6 +25,10 @@ public class LyricService
     private static readonly HttpClient Http = CreateHttpClient();
     private readonly ConcurrentDictionary<string, LyricResult> _cache = new();
 
+    /// <summary>进程级单例（A7 多显示器）：内部有结果缓存，多条 Shell 的
+    /// MusicModule 共享同一份——同 key 不重复请求外网 API</summary>
+    public static LyricService Shared { get; } = new();
+
     private static HttpClient CreateHttpClient()
     {
         var handler = new HttpClientHandler

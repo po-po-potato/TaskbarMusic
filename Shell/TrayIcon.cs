@@ -20,7 +20,7 @@ internal sealed class TrayIcon : System.IDisposable
             ContextMenuStrip = shell.BuildContextMenu(), // 与右键条共用同一套 WinForms 菜单
             Visible = true,
         };
-        _icon.DoubleClick += (_, _) => shell.OpenSettings();
+        _icon.DoubleClick += (_, _) => ShellManager.OpenSettings();
     }
 
     public void Dispose()

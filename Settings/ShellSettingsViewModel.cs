@@ -169,6 +169,13 @@ public partial class ShellSettingsViewModel : ObservableObject
     /// <summary>条宽度被拖动时由壳调用，刷新显示</summary>
     public void RefreshWidth() => WindowWidth = _config.Width;
 
+    /// <summary>TrayOwner 变化时由 ShellSettingsSection 调用，重建模块管理行</summary>
+    public void RebuildModuleRows(ModuleHost? host)
+    {
+        ModuleRows.Clear();
+        if (host != null) BuildModuleRows(host);
+    }
+
     [RelayCommand]
     private void ResetPosition() => ResetPositionRequested?.Invoke();
 
