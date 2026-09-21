@@ -42,8 +42,60 @@ internal static class Win32
     [DllImport("user32.dll")]
     internal static extern bool GetCursorPos(out POINT lpPoint);
 
+    // ===== 显示器/任务栏枚举（A7 多显示器）=====
+
+    [DllImport("user32.dll")]
+    internal static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    internal delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+
+    /// <summary>MONITORINFOEX：比 MONITORINFO 多 szDevice（\\.\DISPLAY1 形式的设备名，
+    /// A7 显示器唯一 key）。GetMonitorInfo 的 cbSize 必须按本结构实际大小设置。</summary>
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct MONITORINFOEX
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
+    }
+
+    /// <summary>取窗口所在显示器的设备名（\\.\DISPLAY1）；失败返回空串</summary>
+    internal static string MonitorDeviceOf(IntPtr hwnd)
+    {
+        var mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        if (mon == IntPtr.Zero) return "";
+        var mi = new MONITORINFOEX { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFOEX>() };
+        return GetMonitorInfo(mon, ref mi) ? mi.szDevice : "";
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct POINT { public int X, Y; }
+
+    // ===== 显示器信息（E5 浮层工作区夹取用）=====
+    internal const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    internal static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", CharSet = CharSet.Unicode)]
+    internal static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX lpmi);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct MONITORINFO
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public int dwFlags;
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     internal struct RECT { public int Left, Top, Right, Bottom; }
@@ -52,6 +104,7 @@ internal static class Win32
     internal const uint SWP_NOACTIVATE = 0x0010;
     internal const uint SWP_NOMOVE = 0x0002;
     internal const uint SWP_NOSIZE = 0x0001;
+    internal const uint SWP_NOZORDER = 0x0004;
     internal const int GWL_EXSTYLE = -20;
     internal const int GWL_STYLE = -16;
     internal const int WS_EX_TOOLWINDOW = 0x00000080;
