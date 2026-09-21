@@ -110,6 +110,22 @@ public class ModuleSlotConfig
 }
 
 /// <summary>
+/// 倒数日条目（A7 倒数日模块）：名称 + 日期 + 是否每年重复。
+/// Annual 项（生日/纪念日）到期后自动滚到下一次 occurrence；普通项过期隐藏。
+/// </summary>
+public class CountdownItem
+{
+    /// <summary>显示名（如「老妈生日」「v1.0 发布」）</summary>
+    public string Name { get; set; } = "";
+
+    /// <summary>目标日期（yyyy-MM-dd）</summary>
+    public string Date { get; set; } = "";
+
+    /// <summary>每年重复（生日/纪念日类）</summary>
+    public bool Annual { get; set; } = false;
+}
+
+/// <summary>
 /// 应用配置：保存到 %APPDATA%\TaskbarMusic\config.json
 /// </summary>
 public class AppConfig
@@ -199,6 +215,82 @@ public class AppConfig
     /// <summary>今日计数对应的日期键（yyyy-MM-dd）；不等当天即清零重计</summary>
     public string PomodoroTodayKey { get; set; } = "";
 
+    // ===== 网速模块（A6）=====
+
+    /// <summary>今日累计接收字节（差分累加，TodayKey 跨天清零；60s 节流落盘）</summary>
+    public long NetSpeedTodayRx { get; set; } = 0;
+
+    /// <summary>今日累计发送字节</summary>
+    public long NetSpeedTodayTx { get; set; } = 0;
+
+    /// <summary>今日累计对应的日期键（yyyy-MM-dd）；不等当天即清零重计</summary>
+    public string NetSpeedTodayKey { get; set; } = "";
+
+    /// <summary>锁定的网卡 Id（NetworkInterface.Id）；空 = 自动选择
+    /// （粘性策略：累计流量最大者，消失才切换）</summary>
+    public string NetSpeedAdapterId { get; set; } = "";
+
+    /// <summary>速率小数位数：0 = 整数（12 MB/s）· 1 = 一位小数（12.5 MB/s，默认）</summary>
+    public int NetSpeedDecimalPlaces { get; set; } = 1;
+
+    /// <summary>单位制式：0 = 字节（B/s 自动 KB/MB/GB，默认）· 1 = 比特（bps 自动
+    /// Kbps/Mbps/Gbps，运营商带宽口径 = 字节 × 8）· 2 = 隐藏（纯数字紧凑）</summary>
+    public int NetSpeedUnitMode { get; set; } = 0;
+
+    /// <summary>[已废弃] 旧单位显隐开关（2026-09-21 并入 NetSpeedUnitMode），仅 Load 迁移读入</summary>
+    public bool NetSpeedShowUnit { get; set; } = true;
+
+    /// <summary>箭头风格：0 = 实心三角（默认）· 1 = 线条描边 · 2 = 无箭头</summary>
+    public int NetSpeedArrowStyle { get; set; } = 0;
+
+    // ===== 倒数日模块（A7）=====
+
+    /// <summary>倒数项（纪念日 + 手动倒计时事件合并承载；不接系统日历）</summary>
+    public List<CountdownItem> CountdownItems { get; set; } = new();
+
+    // ===== 天气模块（A3，2026-09-21）=====
+
+    /// <summary>城市显示名（geocoding 解析结果，如「深圳」）</summary>
+    public string WeatherCity { get; set; } = "";
+
+    /// <summary>纬度（Open-Meteo）</summary>
+    public double WeatherLat { get; set; } = 0;
+
+    /// <summary>经度（Open-Meteo）</summary>
+    public double WeatherLon { get; set; } = 0;
+
+    // ===== 财经模块（A4，2026-09-21）=====
+
+    /// <summary>自选股代码列表（腾讯行情格式：hk00700 / sh600519 / sz300750；
+    /// ticker 轮播顺序 = 列表顺序）</summary>
+    public List<string> StockCodes { get; set; } = new();
+
+    // ===== A7 多显示器 =====
+
+    /// <summary>勾选挂条的显示器设备名列表（\\.\DISPLAY1 形式）。
+    /// 空/无有效项 = 仅主屏（默认，向后兼容）。</summary>
+    public List<string> EnabledMonitors { get; set; } = new();
+
+    /// <summary>每条独立的横向偏移（DIP），key = 显示器设备名。
+    /// "单独拖动互不影响"（A7 验收）的存储基础；Width 保持全局共享（视觉统一）。</summary>
+    public Dictionary<string, double> MonitorOffsets { get; set; } = new();
+
+    private static AppConfig? _shared;
+
+    /// <summary>进程级单例（A7 多显示器后多条 Shell/模块必须共享同一份配置实例，
+    /// 否则各自 Load/Save 互相覆盖——后写者赢，先写者的改动丢失）</summary>
+    public static AppConfig Shared => _shared ??= Load();
+
+    /// <summary>读某显示器的横向偏移；无记录时主屏回退旧全局 OffsetX（兼容迁移），
+    /// 其余屏默认 200</summary>
+    public double OffsetXOf(string monitorKey, bool isPrimary)
+        => MonitorOffsets.TryGetValue(monitorKey, out var v)
+            ? v
+            : (isPrimary ? OffsetX : 200);
+
+    /// <summary>写某显示器的横向偏移（不落盘——拖动结束/重置时统一 Save）</summary>
+    public void SetOffsetX(string monitorKey, double value) => MonitorOffsets[monitorKey] = value;
+
     private static string ConfigDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "TaskbarMusic");
 
@@ -223,6 +315,9 @@ public class AppConfig
             cfg.LyricOffsetMs = (int)(cfg.LyricOffsetSec * 1000);
             cfg.LyricOffsetSec = 0;
         }
+        // 一次性迁移：旧 NetSpeedShowUnit（bool）→ NetSpeedUnitMode（三档制式）
+        if (!cfg.NetSpeedShowUnit && cfg.NetSpeedUnitMode == 0)
+            cfg.NetSpeedUnitMode = 2;
         return cfg;
     }
 
