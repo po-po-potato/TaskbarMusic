@@ -1,0 +1,19 @@
+<UserControl x:Class="TaskbarMusic.CountdownModule"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- A7 倒数日模块（设计稿：交互态页 A7 卡；纪念日+手动倒计时事件合并承载）。
+         条内只显示最近一项：前缀 13 白 70% + 天数 16 SemiBold。
+         天数颜色自动分层：>7 天白 / ≤7 天强调蓝 / 当天整行高亮（TodayPrefix 置文案）。
+         背景 Transparent 叠任务栏；无点击；hover 出浮层列全部（临期项标蓝）。 -->
+
+    <Grid Background="Transparent">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Margin="14,0,0,0">
+            <TextBlock x:Name="PrefixText" Text="暂无倒数日" VerticalAlignment="Center"
+                       FontSize="13" Foreground="#B3FFFFFF" />
+            <TextBlock x:Name="DaysText" Text="" Margin="8,0,0,0" VerticalAlignment="Center"
+                       FontSize="16" FontWeight="SemiBold" Foreground="White" />
+        </StackPanel>
+    </Grid>
+</UserControl>
