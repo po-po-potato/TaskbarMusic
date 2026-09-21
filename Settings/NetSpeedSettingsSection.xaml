@@ -1,0 +1,74 @@
+<UserControl x:Class="TaskbarMusic.NetSpeedSettingsSection"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
+
+    <!-- 网速设置分区（A6）：网卡选择 + 显示风格（小数位/单位/箭头）+ 今日累计。
+         code-behind 直改 AppConfig；改动即时生效（模块每秒 tick 幂等拾取）+ 即时落盘。 -->
+
+    <StackPanel>
+        <TextBlock Text="网速" FontSize="20" FontWeight="SemiBold" Margin="0,4,0,16"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="网卡" Margin="0,0,0,8"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <ComboBox x:Name="AdapterBox" Width="360" HorizontalAlignment="Left"
+                          SelectionChanged="AdapterBox_SelectionChanged" />
+                <TextBlock Text="自动 = 跟随流量最大的活跃网卡（切换 Wi-Fi/有线自动跟随）；锁定指定网卡后不再自动切换"
+                           FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="显示风格" Margin="0,0,0,8"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBlock Text="小数位" Width="80" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <ComboBox x:Name="DecimalBox" Width="160" SelectionChanged="DecimalBox_SelectionChanged">
+                        <ComboBoxItem Content="整数（12 MB/s）" />
+                        <ComboBoxItem Content="一位小数（12.5 MB/s）" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBlock Text="单位" Width="80" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <ComboBox x:Name="UnitModeBox" Width="220" SelectionChanged="UnitModeBox_SelectionChanged">
+                        <ComboBoxItem Content="字节（B/s → KB/s → MB/s）" />
+                        <ComboBoxItem Content="比特（bps → Kbps → Mbps）" />
+                        <ComboBoxItem Content="隐藏（只显示数字）" />
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="箭头" Width="80" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <ComboBox x:Name="ArrowBox" Width="160" SelectionChanged="ArrowBox_SelectionChanged">
+                        <ComboBoxItem Content="实心三角" />
+                        <ComboBoxItem Content="线条" />
+                        <ComboBoxItem Content="无" />
+                    </ComboBox>
+                </StackPanel>
+                <TextBlock Text="改完约 1 秒内生效（下次采样刷新）"
+                           FontSize="12" Margin="0,8,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+
+        <ui:Card Margin="0,0,0,8">
+            <StackPanel>
+                <TextBlock Text="今日累计" Margin="0,0,0,8"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <TextBlock x:Name="TodayText" Text="↓ 0 B · ↑ 0 B" FontSize="13"
+                           FontFamily="Consolas"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <TextBlock Text="每天零点自动清零；断电等异常退出最多丢 1 分钟统计"
+                           FontSize="12" Margin="0,8,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ui:Card>
+    </StackPanel>
+</UserControl>

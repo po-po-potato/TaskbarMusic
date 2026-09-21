@@ -1,0 +1,49 @@
+<UserControl x:Class="TaskbarMusic.NetSpeedModule"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- A6 网速监控模块（设计稿：交互态页 A6 卡）。
+         条内形态：上行（蓝箭头）+ 下行（绿箭头）速率，靠左聚拢。
+         字体口径（2026-09-21 终版，Glenn 两次反馈收敛）：数字与单位统一用全局
+         「界面字体」——位置稳定性不再依赖等宽字体，改由固定宽度保证：
+         上行组容器 104 + 数字区 44（容纳 F1 最宽 "1023.9"），数字/单位位置恒定。
+         数字/单位字体均在代码里应用 config.FontFamily（条级无全局字体机制，
+         XAML 默认 Segoe UI 不跟随，必须显式设置）。
+         箭头三种风格（实心/线条/无）：Solid/Outline 两个 Path 切换 Visibility。
+         可设置（NetSpeed 设置分区）：小数位 0/1、单位显隐、箭头风格。
+         背景 Transparent：信息模块叠于任务栏底色（与天气/ticker 同形态）。
+         无交互（点击冒泡给壳拖拽）；hover 出浮层（今日累计 + 网卡名）。 -->
+
+    <Grid Background="Transparent">
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Margin="14,0,0,0">
+            <!-- 上行组：固定宽度（下行起始位恒定的锚点） -->
+            <StackPanel Width="104" Orientation="Horizontal" VerticalAlignment="Center">
+                <Path x:Name="UpArrowSolid"
+                      Data="M5 1 L9 6 L6.5 6 L6.5 9 L3.5 9 L3.5 6 L1 6 Z"
+                      Fill="#4CC2FF" Width="10" Height="10" VerticalAlignment="Center" />
+                <Path x:Name="UpArrowOutline"
+                      Data="M5 1 L9 6 L6.5 6 L6.5 9 L3.5 9 L3.5 6 L1 6 Z"
+                      Stroke="#4CC2FF" StrokeThickness="1.1" Fill="Transparent"
+                      Width="10" Height="10" VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock x:Name="UpNum" Text="0" Margin="6,0,0,0" Width="44" VerticalAlignment="Center"
+                           FontSize="13" FontWeight="Medium" Foreground="White" />
+                <TextBlock x:Name="UpUnit" Text="B/s" Margin="3,0,0,0" VerticalAlignment="Center"
+                           FontSize="13" Foreground="#B3FFFFFF" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                <Path x:Name="DownArrowSolid"
+                      Data="M5 9 L1 4 L3.5 4 L3.5 1 L6.5 1 L6.5 4 L9 4 Z"
+                      Fill="#3DDC84" Width="10" Height="10" VerticalAlignment="Center" />
+                <Path x:Name="DownArrowOutline"
+                      Data="M5 9 L1 4 L3.5 4 L3.5 1 L6.5 1 L6.5 4 L9 4 Z"
+                      Stroke="#3DDC84" StrokeThickness="1.1" Fill="Transparent"
+                      Width="10" Height="10" VerticalAlignment="Center" Visibility="Collapsed" />
+                <TextBlock x:Name="DownNum" Text="0" Margin="6,0,0,0" Width="44" VerticalAlignment="Center"
+                           FontSize="13" FontWeight="Medium" Foreground="White" />
+                <TextBlock x:Name="DownUnit" Text="B/s" Margin="3,0,0,0" VerticalAlignment="Center"
+                           FontSize="13" Foreground="#B3FFFFFF" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</UserControl>
