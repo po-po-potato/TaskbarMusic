@@ -9,6 +9,11 @@ namespace TaskbarMusic;
 /// E6 单屏轮播模型：条是一块固定宽度的小显示屏，同时只显示一个模块，
 /// 滚轮切换显示对象；启用模块全部常驻运行（服务不断），只换视图。
 /// 模块自身不实现切换逻辑。
+///
+/// ⚠️ 透明底模块（Background=Transparent 叠任务栏）注意事项（2026-09-21 实锤）：
+/// 条是分层窗口，alpha=0 像素会被 Win32 hit-test 穿透（滚轮/点击直达任务栏）。
+/// 壳层 RootBorder 已垫 #01FFFFFF 兜底（整条不穿透），模块 View 用 Transparent
+/// 表达"透明叠任务栏"语义即可，无需自行处理穿透。
 /// </summary>
 public interface ITaskbarModule
 {

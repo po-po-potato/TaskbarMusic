@@ -26,8 +26,12 @@
         </Style>
     </Window.Resources>
 
-    <!-- 根容器：壳默认背景（深色渐变）；模块在自己的 View 上叠背景（如封面取色） -->
-    <Grid x:Name="RootBorder">
+    <!-- 根容器：壳默认背景（深色渐变）；模块在自己的 View 上叠背景（如封面取色）。
+         Background=#01FFFFFF（alpha=1/255，视觉不可见）：条是分层窗口，alpha=0 像素
+         会被 Win32 hit-test 穿透（WindowFromPoint 跳过本窗口直达任务栏）——透明底
+         模块（网速/倒数日）的空白区域曾因此收不到滚轮事件（2026-09-21 实锤：
+         穿透到 SysListView32）；垫 1/255 alpha 后整条不穿透，透明叠任务栏的视觉不变 -->
+    <Grid x:Name="RootBorder" Background="#01FFFFFF">
         <!-- 右键菜单改用 WinForms ContextMenuStrip（与托盘共用）——WPF ContextMenu
              关闭后干扰同进程窗口渲染，导致从右键条开的设置窗 resize 卡；WinForms
              菜单独立于 WPF 渲染/事件体系，托盘走它一直不卡。见 TaskbarShell.BuildContextMenu。 -->
